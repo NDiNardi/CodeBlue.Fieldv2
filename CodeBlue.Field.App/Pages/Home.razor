@@ -5,6 +5,8 @@
 @inject IFieldDataService FieldData
 @inject IFieldSyncService FieldSync
 @inject IJSRuntime JS
+@inject NavigationManager Nav
+
 <PageTitle>Technician Dashboard</PageTitle>
 
 @if (_snapshot is null || _workOrders is null || _pendingChanges is null)
@@ -24,22 +26,25 @@ else
     <section class="route-map-card">
         <div class="route-map-head">
             <div class="route-map-titlebar">
-                <button class="day-nav-button route-day-button" type="button" @onclick="PrevDay" aria-label="Previous day">
-                    <svg class="nav-chevron-icon" viewBox="0 0 24 24" aria-hidden="true">
-                        <path d="M14.41 7.41 9.83 12l4.58 4.59L13 18l-6-6 6-6z"></path>
-                    </svg>
-                </button>
-                <p class="route-map-title">@RouteHeading</p>
-                <button class="day-nav-button route-day-button" type="button" @onclick="NextDay" aria-label="Next day">
-                    <svg class="nav-chevron-icon" viewBox="0 0 24 24" aria-hidden="true">
-                        <path d="m10 6 6 6-6 6-1.41-1.41L13.17 12 8.59 7.41z"></path>
-                    </svg>
-                </button>
+                <p class="route-map-title">Group @_selectedGroup Route</p>
             </div>
             <div class="route-map-actions">
-                <button class="day-nav-today route-today-button" type="button" @onclick="GoToday">Reset</button>
+                @if (UnassignedCount > 0)
+                {
+                    <span class="section-tag">@UnassignedCount unassigned</span>
+                }
             </div>
         </div>
+
+        <div class="sch-route-daystrip" style="padding:0 1.25rem 1rem;">
+            @foreach (var group in RouteGroups)
+            {
+                <button class="@($"sch-daypill {GroupPillClass(group)} {(group == _selectedGroup ? "is-active" : string.Empty)}")" type="button" @onclick="() => SelectGroup(group)">
+                    Group @group
+                </button>
+            }
+        </div>
+
         <div class="route-map-body">
             <div id="cbScheduleMap" class="route-live-map"></div>
             @if (MapStops.Count == 0)
@@ -48,12 +53,12 @@ else
                     @if (RemainingItems.Count == 0)
                     {
                         <h3>No remaining stops</h3>
-                        <p>The selected day has no active work orders in the current local snapshot.</p>
+                        <p>This route group does not currently have any active service requests.</p>
                     }
                     else
                     {
                         <h3>No mappable stops</h3>
-                        <p>Remaining work orders are missing saved coordinates in the current snapshot.</p>
+                        <p>The remaining service requests in this group are missing saved coordinates in the current snapshot.</p>
                     }
                 </div>
             }
@@ -63,7 +68,7 @@ else
     <section class="section-block">
         <div class="section-heading dashboard-list-heading">
             <div>
-                <p class="eyebrow">Remaining Work Orders</p>
+                <p class="eyebrow">Current Service Requests</p>
             </div>
         </div>
 
@@ -72,64 +77,112 @@ else
             {
                 <article class="empty-card">
                     <h3>No remaining stops</h3>
-                    <p>There are no active work orders scheduled for the selected day.</p>
+                    <p>There are no active service requests in this route group right now.</p>
                 </article>
             }
             else
             {
-                @foreach (var workOrder in RemainingItems)
+                @foreach (var serviceRequest in RemainingItems)
                 {
-                    <a class="dashboard-stop-card" href="@($"/work-orders/active/{workOrder.Id}")">
-                        <div class="stop-card-row">
-                            <div class="stop-card-main">
-                                <div class="dashboard-stop-top">
-                                    <div class="address-title">@StreetOnly(workOrder)</div>
-                                    @if (HasStopActions(workOrder))
+                    <div class="dashboard-swipe-shell">
+                        <div class="dashboard-swipe-actions" aria-hidden="@((!IsSwipeOpen(serviceRequest.Id)).ToString().ToLowerInvariant())">
+                            <button type="button" class="dashboard-swipe-action-button"
+                                    @onclick="() => MoveRouteStopToEdgeAsync(serviceRequest.Id, true)"
+                                    @onclick:stopPropagation="true"
+                                    aria-label="Move to top">
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M7 4h10v2H7zM7.41 11.59 12 7l4.59 4.59L18 10.17l-6-6-6 6z"></path>
+                                </svg>
+                            </button>
+                            <button type="button" class="dashboard-swipe-action-button"
+                                    @onclick="() => MoveRouteStopAsync(serviceRequest.Id, -1)"
+                                    @onclick:stopPropagation="true"
+                                    aria-label="Move up">
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M7.41 14.59 12 10l4.59 4.59L18 13.17l-6-6-6 6z"></path>
+                                </svg>
+                            </button>
+                            <button type="button" class="dashboard-swipe-action-button"
+                                    @onclick="() => MoveRouteStopToEdgeAsync(serviceRequest.Id, false)"
+                                    @onclick:stopPropagation="true"
+                                    aria-label="Move to bottom">
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M7 18h10v2H7zM16.59 12.41 12 17l-4.59-4.59L6 13.83l6 6 6-6z"></path>
+                                </svg>
+                            </button>
+                            <button type="button" class="dashboard-swipe-action-button"
+                                    @onclick="() => MoveRouteStopAsync(serviceRequest.Id, 1)"
+                                    @onclick:stopPropagation="true"
+                                    aria-label="Move down">
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M7.41 9.41 12 14l4.59-4.59L18 10.83l-6 6-6-6z"></path>
+                                </svg>
+                            </button>
+                        </div>
+
+                        <div class="dashboard-stop-card dashboard-stop-card-swipeable"
+                             style="@CardSwipeStyle(serviceRequest.Id)"
+                             role="link"
+                             tabindex="0"
+                             @onclick="() => OpenServiceRequest(serviceRequest.Id)"
+                             @ontouchstart="(args) => BeginSwipe(serviceRequest.Id, args)"
+                             @ontouchmove="(args) => TrackSwipe(serviceRequest.Id, args)"
+                             @ontouchend="() => EndSwipe(serviceRequest.Id)"
+                             @ontouchcancel="CancelSwipe">
+                            <div class="stop-card-row">
+                                <div class="stop-card-main">
+                                    <div class="dashboard-stop-top">
+                                        <div class="address-title">@StreetOnly(serviceRequest)</div>
+                                        @if (HasStopActions(serviceRequest))
+                                        {
+                                            <span class="dashboard-stop-inline-action">
+                                                @if (HasMapTarget(serviceRequest))
+                                                {
+                                                    <a class="dashboard-stop-map-link"
+                                                       href="@MapLink(serviceRequest)"
+                                                       target="_blank"
+                                                       rel="noopener noreferrer"
+                                                       @onclick:stopPropagation="true"
+                                                       @onclick="() => CloseSwipe()"
+                                                       @onclick:preventDefault="false"
+                                                       aria-label="Open map">
+                                                        <svg class="dashboard-stop-map-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                                            <path d="M12 21s-5.5-5.27-5.5-10A5.5 5.5 0 1 1 17.5 11C17.5 15.73 12 21 12 21zm0-7.2A2.8 2.8 0 1 0 12 8.2a2.8 2.8 0 0 0 0 5.6z"></path>
+                                                        </svg>
+                                                    </a>
+                                                }
+                                                @if (!string.IsNullOrWhiteSpace(serviceRequest.ServiceContactPhone))
+                                                {
+                                                    <button type="button"
+                                                       class="dashboard-stop-phone-link"
+                                                       @onclick:stopPropagation="true"
+                                                       @onclick="() => BeginCallFlow(serviceRequest)"
+                                                       aria-label="Call customer">
+                                                        <svg class="dashboard-stop-phone-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                                            <path d="M6.62 10.79a15.05 15.05 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1-.24c1.12.37 2.33.56 3.59.56a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1C10.3 21 3 13.7 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.26.19 2.47.56 3.59a1 1 0 0 1-.25 1z"></path>
+                                                        </svg>
+                                                    </button>
+                                                }
+                                            </span>
+                                        }
+                                    </div>
+                                    <div class="card-subline card-subline-clamp">@ProblemText(serviceRequest)</div>
+                                    @if (serviceRequest.HasPendingUpload)
                                     {
-                                        <span class="dashboard-stop-inline-action">
-                                            @if (HasMapTarget(workOrder))
-                                            {
-                                                <a class="dashboard-stop-map-link"
-                                                   href="@MapLink(workOrder)"
-                                                   target="_blank"
-                                                   rel="noopener noreferrer"
-                                                   @onclick:stopPropagation="true"
-                                                   @onclick:preventDefault="false"
-                                                   aria-label="Open map">
-                                                    <svg class="dashboard-stop-map-icon" viewBox="0 0 24 24" aria-hidden="true">
-                                                        <path d="M12 21s-5.5-5.27-5.5-10A5.5 5.5 0 1 1 17.5 11C17.5 15.73 12 21 12 21zm0-7.2A2.8 2.8 0 1 0 12 8.2a2.8 2.8 0 0 0 0 5.6z"></path>
-                                                    </svg>
-                                                </a>
-                                            }
-                                            @if (!string.IsNullOrWhiteSpace(workOrder.ServiceContactPhone))
-                                            {
-                                                <a class="dashboard-stop-phone-link"
-                                                   href="@TelLink(workOrder.ServiceContactPhone)"
-                                                   @onclick:stopPropagation="true"
-                                                   @onclick:preventDefault="false"
-                                                   aria-label="Call customer">
-                                                    <svg class="dashboard-stop-phone-icon" viewBox="0 0 24 24" aria-hidden="true">
-                                                        <path d="M6.62 10.79a15.05 15.05 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1-.24c1.12.37 2.33.56 3.59.56a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1C10.3 21 3 13.7 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.26.19 2.47.56 3.59a1 1 0 0 1-.25 1z"></path>
-                                                    </svg>
-                                                </a>
-                                            }
-                                        </span>
+                                        <span class="pill pill-alert dashboard-stop-pill">Pending sync</span>
                                     }
                                 </div>
-                                <div class="card-subline card-subline-clamp">@ProblemText(workOrder)</div>
-                                @if (workOrder.HasPendingUpload)
-                                {
-                                    <span class="pill pill-alert dashboard-stop-pill">Pending sync</span>
-                                }
                             </div>
                         </div>
-                    </a>
+                    </div>
                 }
             }
         </div>
+
         <div class="my-5"></div>
+
         <div>
-            <p class="eyebrow">Completed Stops</p>
+            <p class="eyebrow">Completed In Group</p>
         </div>
 
         <div class="data-list">
@@ -137,25 +190,25 @@ else
             {
                 <article class="empty-card">
                     <h3>No completed stops</h3>
-                    <p>Completed stops for the selected day will appear here for quick reference.</p>
+                    <p>Completed service requests in this route group will appear here for quick reference.</p>
                 </article>
             }
             else
             {
-                @foreach (var workOrder in CompletedItems)
+                @foreach (var serviceRequest in CompletedItems)
                 {
-                    <a class="dashboard-stop-card dashboard-stop-card-complete" href="@($"/work-orders/history/{workOrder.Id}")">
+                    <a class="dashboard-stop-card dashboard-stop-card-complete" href="@($"/service-requests/{serviceRequest.Id}")">
                         <div class="stop-card-row">
                             <div class="stop-card-main">
                                 <div class="dashboard-stop-top">
-                                    <div class="address-title">@StreetOnly(workOrder)</div>
-                                    @if (HasStopActions(workOrder))
+                                    <div class="address-title">@StreetOnly(serviceRequest)</div>
+                                    @if (HasStopActions(serviceRequest))
                                     {
                                         <span class="dashboard-stop-inline-action">
-                                            @if (HasMapTarget(workOrder))
+                                            @if (HasMapTarget(serviceRequest))
                                             {
                                                 <a class="dashboard-stop-map-link"
-                                                   href="@MapLink(workOrder)"
+                                                   href="@MapLink(serviceRequest)"
                                                    target="_blank"
                                                    rel="noopener noreferrer"
                                                    @onclick:stopPropagation="true"
@@ -166,22 +219,22 @@ else
                                                     </svg>
                                                 </a>
                                             }
-                                            @if (!string.IsNullOrWhiteSpace(workOrder.ServiceContactPhone))
+                                            @if (!string.IsNullOrWhiteSpace(serviceRequest.ServiceContactPhone))
                                             {
-                                                <a class="dashboard-stop-phone-link"
-                                                   href="@TelLink(workOrder.ServiceContactPhone)"
+                                                <button type="button"
+                                                   class="dashboard-stop-phone-link"
                                                    @onclick:stopPropagation="true"
-                                                   @onclick:preventDefault="false"
+                                                   @onclick="() => BeginCallFlow(serviceRequest)"
                                                    aria-label="Call customer">
                                                     <svg class="dashboard-stop-phone-icon" viewBox="0 0 24 24" aria-hidden="true">
                                                         <path d="M6.62 10.79a15.05 15.05 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1-.24c1.12.37 2.33.56 3.59.56a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1C10.3 21 3 13.7 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.26.19 2.47.56 3.59a1 1 0 0 1-.25 1z"></path>
                                                     </svg>
-                                                </a>
+                                                </button>
                                             }
                                         </span>
                                     }
                                 </div>
-                                <div class="card-subline card-subline-clamp">@ProblemText(workOrder)</div>
+                                <div class="card-subline card-subline-clamp">@ProblemText(serviceRequest)</div>
                             </div>
                         </div>
                     </a>
@@ -189,40 +242,122 @@ else
             }
         </div>
     </section>
+
+    @if (_callDialogRequest is not null)
+    {
+        <div class="menu-backdrop is-open" @onclick="CloseCallFlow"></div>
+        <section class="bottom-sheet is-open dashboard-call-sheet" aria-label="Call customer">
+            <div class="bottom-sheet-handle"></div>
+            @if (!_callNotesStage)
+            {
+                <div class="bottom-sheet-header">
+                    <div>
+                        <p class="eyebrow">CALL CUSTOMER</p>
+                        <h2>Call Customer?</h2>
+                    </div>
+                </div>
+                <div class="sheet-nav">
+                    <div class="sheet-nav-hint">
+                        @_callDialogRequest.ServiceContactName
+                        @if (!string.IsNullOrWhiteSpace(_callDialogRequest.ServiceContactPhone))
+                        {
+                            <span> · @_callDialogRequest.ServiceContactPhone</span>
+                        }
+                    </div>
+                    <div class="sheet-nav-hint">@StreetOnly(_callDialogRequest)</div>
+                    <div class="dashboard-call-actions">
+                        <button class="sheet-nav-link sheet-nav-link-button" type="button" @onclick="ConfirmCallAsync">
+                            <span class="sheet-nav-icon">☎</span>
+                            <strong>Yes</strong>
+                        </button>
+                        <button class="sheet-nav-link sheet-nav-link-button" type="button" @onclick="CloseCallFlow">
+                            <span class="sheet-nav-icon">✕</span>
+                            <strong>Cancel</strong>
+                        </button>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="bottom-sheet-header">
+                    <div>
+                        <p class="eyebrow">CALL NOTES</p>
+                        <h2>Notes from call</h2>
+                    </div>
+                </div>
+                <div class="sheet-nav">
+                    <label class="field-stack">
+                        <span>Notes from call</span>
+                        <textarea class="field-input field-textarea" rows="4" @bind="_callNotes"></textarea>
+                    </label>
+                    @if (CanOfferBuilderUpdate(_callDialogRequest))
+                    {
+                        <label class="field-check-row">
+                            <input type="checkbox" @bind="_updateBuilderAfterCall" />
+                            <span>Update builder on future status changes for this service request</span>
+                        </label>
+                    }
+                    <div class="dashboard-call-actions">
+                        <button class="sheet-nav-link sheet-nav-link-button" type="button" @onclick="SaveCallFlowAsync">
+                            <span class="sheet-nav-icon">✓</span>
+                            <strong>Save</strong>
+                        </button>
+                        <button class="sheet-nav-link sheet-nav-link-button" type="button" @onclick="CloseCallFlow">
+                            <span class="sheet-nav-icon">✕</span>
+                            <strong>Cancel</strong>
+                        </button>
+                    </div>
+                </div>
+            }
+        </section>
+    }
 }
 
 @code {
+    private const double DefaultCenterLat = 36.120637;
+    private const double DefaultCenterLng = -115.108577;
+    private const double DefaultCenterZoom = 9.25;
+    private static readonly IReadOnlyList<int> RouteGroups = [1, 2, 3, 4, 5];
+    private static readonly TimeSpan AutoRefreshThreshold = TimeSpan.FromMinutes(30);
+
     private SyncSnapshot? _snapshot;
     private IReadOnlyList<WorkOrderSummary>? _workOrders;
     private IReadOnlyList<PendingChange>? _pendingChanges;
-    private DateOnly _selectedDate = DateOnly.FromDateTime(DateTime.Today);
+    private int _selectedGroup = 1;
     private string? _lastMapRenderKey;
     private bool _mapAssetsReady;
+    private Guid? _swipedCardId;
+    private Guid? _touchCardId;
+    private double _touchStartX;
+    private double _touchStartY;
+    private double _touchDeltaX;
+    private double _touchDeltaY;
+    private bool _suppressNextCardClick;
+    private WorkOrderSummary? _callDialogRequest;
+    private bool _callNotesStage;
+    private string _callNotes = string.Empty;
+    private bool _updateBuilderAfterCall;
+    private readonly Dictionary<Guid, (string Notes, bool UpdateBuilder)> _callNoteDrafts = [];
 
-    private const double DefaultCenterLat = 36.175052;
-    private const double DefaultCenterLng = -115.156251;
-    private static readonly TimeSpan AutoRefreshThreshold = TimeSpan.FromMinutes(30);
-
-    private IReadOnlyList<WorkOrderSummary> ForSelectedDay =>
+    private IReadOnlyList<WorkOrderSummary> ForSelectedGroup =>
         (_workOrders ?? [])
-            .Where(x => (x.ScheduledDate ?? x.DateSubmitted) == _selectedDate)
-            .OrderBy(x => IsCompleted(x.Status))
-            .ThenBy(x => StreetOnly(x))
+            .Where(workOrder => workOrder.RouteGroup == _selectedGroup)
+            .OrderBy(workOrder => IsCompleted(workOrder.Status))
+            .ThenBy(workOrder => workOrder.ScheduledOrder ?? int.MaxValue)
+            .ThenBy(workOrder => StreetOnly(workOrder))
             .ToList();
 
     private IReadOnlyList<WorkOrderSummary> RemainingItems =>
-        ForSelectedDay.Where(x => !IsCompleted(x.Status)).ToList();
+        ForSelectedGroup.Where(workOrder => !IsCompleted(workOrder.Status)).ToList();
 
     private IReadOnlyList<WorkOrderSummary> CompletedItems =>
-        ForSelectedDay.Where(x => IsCompleted(x.Status)).ToList();
+        ForSelectedGroup.Where(workOrder => IsCompleted(workOrder.Status)).ToList();
 
     private IReadOnlyList<WorkOrderSummary> MapStops =>
-        RemainingItems.Where(x => x.Latitude is not null && x.Longitude is not null).ToList();
+        RemainingItems.Where(workOrder => workOrder.Latitude is not null && workOrder.Longitude is not null).ToList();
 
-    private string RouteHeading =>
-        _selectedDate == DateOnly.FromDateTime(DateTime.Today)
-            ? "Today"
-            : _selectedDate.ToString("MM/dd/yyyy");
+    private int UnassignedCount =>
+        (_workOrders ?? []).Count(workOrder => IsCurrentStatus(workOrder.Status) && workOrder.RouteGroup is null);
 
     protected override async Task OnInitializedAsync()
     {
@@ -240,6 +375,7 @@ else
         _snapshot = await FieldData.GetSyncSnapshotAsync();
         _workOrders = await FieldData.GetWorkOrdersAsync();
         _pendingChanges = await FieldData.GetPendingChangesAsync();
+        _selectedGroup = ChooseDefaultGroup(_workOrders);
         _lastMapRenderKey = null;
     }
 
@@ -264,39 +400,16 @@ else
         }
     }
 
-    private void PrevDay() => _selectedDate = _selectedDate.AddDays(-1);
-    private void NextDay() => _selectedDate = _selectedDate.AddDays(1);
-    private void GoToday() => _selectedDate = DateOnly.FromDateTime(DateTime.Today);
+    private void SelectGroup(int group)
+    {
+        _selectedGroup = group;
+        _lastMapRenderKey = null;
+        CloseSwipe();
+    }
 
     private async Task RenderMapAsync()
     {
-        if (MapStops.Count == 0)
-        {
-            await EnsureMapAssetsAsync();
-
-            var emptyMapKey = $"empty:{_selectedDate:yyyy-MM-dd}";
-            if (_lastMapRenderKey == emptyMapKey)
-            {
-                return;
-            }
-
-            _lastMapRenderKey = emptyMapKey;
-            await JS.InvokeVoidAsync("cbScheduleMap.renderPins", Array.Empty<DashboardMapPin>(), DefaultCenterLat, DefaultCenterLng);
-            await JS.InvokeVoidAsync("cbScheduleMap.invalidate");
-            return;
-        }
-
         await EnsureMapAssetsAsync();
-
-        var mapKey = string.Join("|", MapStops.Select((stop, index) =>
-            $"{stop.Id}:{index + 1}:{stop.Latitude}:{stop.Longitude}:{stop.Address}:{stop.Status}:{_selectedDate:yyyy-MM-dd}"));
-
-        if (_lastMapRenderKey == mapKey)
-        {
-            return;
-        }
-
-        _lastMapRenderKey = mapKey;
 
         var pins = MapStops
             .Select((stop, index) => new DashboardMapPin(
@@ -305,15 +418,25 @@ else
                 stop.Longitude,
                 stop.Address,
                 StreetOnly(stop),
-                $"day:{_selectedDate:yyyy-MM-dd}",
+                $"group:{_selectedGroup}",
                 index + 1,
-                null,
+                _selectedGroup.ToString(),
                 ProblemText(stop),
                 false,
-                _selectedDate.ToString("ddd")))
+                _selectedGroup.ToString()))
             .ToList();
 
-        await JS.InvokeVoidAsync("cbScheduleMap.renderPins", pins, DefaultCenterLat, DefaultCenterLng);
+        var mapKey = pins.Count == 0
+            ? $"empty:{_selectedGroup}"
+            : string.Join("|", pins.Select(pin => $"{pin.Id}:{pin.Seq}:{pin.Lat}:{pin.Lng}:{pin.Badge}"));
+
+        if (_lastMapRenderKey == mapKey)
+        {
+            return;
+        }
+
+        _lastMapRenderKey = mapKey;
+        await JS.InvokeVoidAsync("cbScheduleMap.renderPins", pins, DefaultCenterLat, DefaultCenterLng, new { preserveView = true, defaultZoom = DefaultCenterZoom });
         await JS.InvokeVoidAsync("cbScheduleMap.invalidate");
     }
 
@@ -328,8 +451,222 @@ else
         _mapAssetsReady = true;
     }
 
+    private void OpenServiceRequest(Guid id)
+    {
+        if (_suppressNextCardClick)
+        {
+            _suppressNextCardClick = false;
+            return;
+        }
+
+        if (_swipedCardId == id)
+        {
+            CloseSwipe();
+            return;
+        }
+
+        Nav.NavigateTo($"/service-requests/{id}");
+    }
+
+    private bool IsSwipeOpen(Guid id) => _swipedCardId == id;
+
+    private string CardSwipeStyle(Guid id) =>
+        IsSwipeOpen(id)
+            ? "transform:translateX(-5.5rem);transition:transform 180ms ease;"
+            : "transform:translateX(0);transition:transform 180ms ease;";
+
+    private void BeginSwipe(Guid id, TouchEventArgs args)
+    {
+        if (args.Touches.Length == 0)
+        {
+            return;
+        }
+
+        var touch = args.Touches[0];
+        _touchCardId = id;
+        _touchStartX = touch.ClientX;
+        _touchStartY = touch.ClientY;
+        _touchDeltaX = 0;
+        _touchDeltaY = 0;
+        _suppressNextCardClick = false;
+    }
+
+    private void TrackSwipe(Guid id, TouchEventArgs args)
+    {
+        if (_touchCardId != id || args.Touches.Length == 0)
+        {
+            return;
+        }
+
+        var touch = args.Touches[0];
+        _touchDeltaX = touch.ClientX - _touchStartX;
+        _touchDeltaY = touch.ClientY - _touchStartY;
+
+        if (Math.Abs(_touchDeltaX) > 18 && Math.Abs(_touchDeltaX) > Math.Abs(_touchDeltaY))
+        {
+            _suppressNextCardClick = true;
+        }
+    }
+
+    private void EndSwipe(Guid id)
+    {
+        if (_touchCardId != id)
+        {
+            return;
+        }
+
+        if (Math.Abs(_touchDeltaX) > 18 && Math.Abs(_touchDeltaX) > Math.Abs(_touchDeltaY))
+        {
+            if (_touchDeltaX <= -48)
+            {
+                _swipedCardId = id;
+            }
+            else if (_touchDeltaX >= 24)
+            {
+                _swipedCardId = null;
+            }
+        }
+
+        _touchCardId = null;
+        _touchDeltaX = 0;
+        _touchDeltaY = 0;
+    }
+
+    private void CancelSwipe()
+    {
+        _touchCardId = null;
+        _touchDeltaX = 0;
+        _touchDeltaY = 0;
+    }
+
+    private void CloseSwipe()
+    {
+        _swipedCardId = null;
+        _touchCardId = null;
+        _touchDeltaX = 0;
+        _touchDeltaY = 0;
+        _suppressNextCardClick = false;
+    }
+
+    private async Task MoveRouteStopAsync(Guid id, int direction)
+    {
+        await FieldData.ReorderRouteGroupAsync(id, direction);
+        await ReloadAsync();
+        _swipedCardId = id;
+    }
+
+    private async Task MoveRouteStopToEdgeAsync(Guid id, bool moveToTop)
+    {
+        var items = RemainingItems.ToList();
+        var currentIndex = items.FindIndex(item => item.Id == id);
+        if (currentIndex < 0)
+        {
+            return;
+        }
+
+        var steps = moveToTop
+            ? currentIndex
+            : (items.Count - 1 - currentIndex);
+
+        if (steps <= 0)
+        {
+            return;
+        }
+
+        var direction = moveToTop ? -1 : 1;
+        for (var i = 0; i < steps; i++)
+        {
+            await FieldData.ReorderRouteGroupAsync(id, direction);
+        }
+
+        await ReloadAsync();
+        _swipedCardId = id;
+    }
+
+    private void BeginCallFlow(WorkOrderSummary request)
+    {
+        CloseSwipe();
+        _callDialogRequest = request;
+        _callNotesStage = false;
+
+        if (_callNoteDrafts.TryGetValue(request.Id, out var draft))
+        {
+            _callNotes = draft.Notes;
+            _updateBuilderAfterCall = draft.UpdateBuilder;
+        }
+        else
+        {
+            _callNotes = string.Empty;
+            _updateBuilderAfterCall = false;
+        }
+    }
+
+    private async Task ConfirmCallAsync()
+    {
+        if (_callDialogRequest is null || string.IsNullOrWhiteSpace(_callDialogRequest.ServiceContactPhone))
+        {
+            return;
+        }
+
+        _callNotesStage = true;
+        await JS.InvokeVoidAsync("open", TelLink(_callDialogRequest.ServiceContactPhone), "_self");
+    }
+
+    private Task SaveCallFlowAsync()
+    {
+        if (_callDialogRequest is not null)
+        {
+            _callNoteDrafts[_callDialogRequest.Id] = (_callNotes.Trim(), _updateBuilderAfterCall);
+        }
+
+        CloseCallFlow();
+        return Task.CompletedTask;
+    }
+
+    private void CloseCallFlow()
+    {
+        _callDialogRequest = null;
+        _callNotesStage = false;
+        _callNotes = string.Empty;
+        _updateBuilderAfterCall = false;
+    }
+
+    private static bool CanOfferBuilderUpdate(WorkOrderSummary request) =>
+        !string.IsNullOrWhiteSpace(request.BuilderCompanyName)
+        || !string.IsNullOrWhiteSpace(request.BuilderEmail)
+        || !string.IsNullOrWhiteSpace(request.BuilderContactPhone);
+
+    private static int ChooseDefaultGroup(IReadOnlyList<WorkOrderSummary>? workOrders)
+    {
+        var grouped = workOrders ?? [];
+        foreach (var group in RouteGroups)
+        {
+            if (grouped.Any(workOrder => workOrder.RouteGroup == group && IsCurrentStatus(workOrder.Status)))
+            {
+                return group;
+            }
+        }
+
+        return 1;
+    }
+
     private static bool IsCompleted(string status) =>
         status.Equals("Completed", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsCurrentStatus(string status) =>
+        status.Equals("Pending", StringComparison.OrdinalIgnoreCase)
+        || status.Equals("New", StringComparison.OrdinalIgnoreCase)
+        || status.Equals("Active", StringComparison.OrdinalIgnoreCase);
+
+    private static string GroupPillClass(int group) => group switch
+    {
+        1 => "cb-day-mon",
+        2 => "cb-day-tue",
+        3 => "cb-day-wed",
+        4 => "cb-day-thu",
+        5 => "cb-day-fri",
+        _ => string.Empty
+    };
 
     private static string StreetOnly(WorkOrderSummary workOrder) =>
         !string.IsNullOrWhiteSpace(workOrder.Street1)
@@ -338,8 +675,6 @@ else
 
     private static string ProblemText(WorkOrderSummary workOrder) =>
         string.IsNullOrWhiteSpace(workOrder.ServiceDetails) ? "No service details recorded." : workOrder.ServiceDetails;
-
-    private static string DisplayDate(DateOnly? date) => date?.ToString("MM/dd/yyyy") ?? "—";
 
     private static string TelLink(string? raw)
     {
@@ -368,11 +703,12 @@ else
         }
 
         var query = string.IsNullOrWhiteSpace(workOrder.Address)
-            ? string.Join(", ", new[] { workOrder.Street1, workOrder.City }.Where(x => !string.IsNullOrWhiteSpace(x)))
+            ? string.Join(", ", new[] { workOrder.Street1, workOrder.City }.Where(value => !string.IsNullOrWhiteSpace(value)))
             : workOrder.Address;
 
         return $"https://www.google.com/maps/search/?api=1&query={Uri.EscapeDataString(query)}";
     }
+
     private static string FirstLine(string value) =>
         string.IsNullOrWhiteSpace(value)
             ? "Unknown Address"

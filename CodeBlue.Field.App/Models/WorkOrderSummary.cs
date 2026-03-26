@@ -18,6 +18,7 @@ public sealed class WorkOrderSummary
     public bool AnimalsPresent { get; init; }
     public string ServiceDetails { get; init; } = string.Empty;
     public DateOnly DateSubmitted { get; init; }
+    public int? RouteGroup { get; init; }
     public DateOnly? ScheduledDate { get; init; }
     public int? ScheduledOrder { get; init; }
     public DateOnly? ServiceStartupDate { get; init; }

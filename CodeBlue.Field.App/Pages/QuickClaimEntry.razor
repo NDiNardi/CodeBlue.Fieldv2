@@ -1,0 +1,359 @@
+@page "/claims/quick"
+@attribute [Authorize(Roles = "Admin,Office")]
+@using CodeBlue.Field.App.Models
+@using CodeBlue.Field.App.Services
+@using CodeBlue.Field.App.Util
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.Extensions.Configuration
+@using Microsoft.JSInterop
+@inject IFieldDataService FieldData
+@inject IFieldAccountClient AccountClient
+@inject IConfiguration Configuration
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Quick Claim</PageTitle>
+
+@if (_loading)
+{
+    <p>Loading quick claim...</p>
+}
+else
+{
+    <section class="field-page field-work-order-page">
+        <section class="section-block">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">QUICK CLAIM</p>
+                </div>
+            </div>
+        </section>
+
+        <div class="field-expansion-list">
+            <details class="field-expansion" open>
+                <summary class="field-expansion-summary">
+                    <span class="field-expansion-title">Address</span>
+                </summary>
+                <div class="field-expansion-body">
+                    <article class="field-paper">
+                        <div class="claim-form-grid">
+                            <label class="form-field form-field-full">
+                                <span>Address *</span>
+                                <input id="quick-claim-street1-input" value="@_addressInput" @oninput="OnAddressInputChanged" @onblur="HydrateFromAddressAsync" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+                                @if (!HasGooglePlacesConfigured)
+                                {
+                                    <span class="muted-note">Address autocomplete is currently unavailable.</span>
+                                }
+                            </label>
+                            <label class="form-field">
+                                <span>City *</span>
+                                <input @bind="_city" />
+                            </label>
+                            <label class="form-field">
+                                <span>State *</span>
+                                <input @bind="_state" />
+                            </label>
+                            <label class="form-field">
+                                <span>Zip *</span>
+                                <input @bind="_zip" />
+                            </label>
+                            <label class="form-field">
+                                <span>Contact Name</span>
+                                <input @bind="_contactName" />
+                            </label>
+                            <label class="form-field">
+                                <span>Contact Phone</span>
+                                <input @bind="_contactPhone" />
+                            </label>
+                            <label class="form-field">
+                                <span>Original Installer / Dealer</span>
+                                <input list="quick-claim-builders" value="@_originalInstallerDealer" @oninput="OnOriginalInstallerChanged" @onblur="HydrateFromBuilderAsync" />
+                                <datalist id="quick-claim-builders">
+                                    @foreach (var builder in BuilderSuggestions)
+                                    {
+                                        <option value="@builder.CompanyName"></option>
+                                    }
+                                </datalist>
+                            </label>
+                            <label class="form-field">
+                                <span>Startup Date</span>
+                                <input type="date" value="@_startupDateString" @onchange="args => _startupDateString = args.Value?.ToString() ?? string.Empty" />
+                            </label>
+                        </div>
+                    </article>
+                </div>
+            </details>
+
+            <details class="field-expansion" open>
+                <summary class="field-expansion-summary">
+                    <span class="field-expansion-title">Claim Information</span>
+                </summary>
+                <div class="field-expansion-body">
+                    <article class="field-paper">
+                        <div class="claim-form-grid">
+                            <label class="form-field">
+                                <span>Failure Date</span>
+                                <input type="date" value="@_failureDateString" @onchange="args => _failureDateString = args.Value?.ToString() ?? string.Empty" />
+                            </label>
+                            <label class="form-field">
+                                <span>Repair Date *</span>
+                                <input type="date" value="@_repairDateString" @onchange="args => _repairDateString = args.Value?.ToString() ?? string.Empty" />
+                            </label>
+                            <label class="form-field">
+                                <span>Component Code</span>
+                                <input @bind="_componentCode" />
+                            </label>
+                            <label class="form-field">
+                                <span>Model Number</span>
+                                <input @bind="_modelNumber" />
+                            </label>
+                            <label class="form-field">
+                                <span>ID / Serial Number</span>
+                                <input @bind="_idSerialNumber" />
+                            </label>
+                            <label class="form-field">
+                                <span>Component Serial Number</span>
+                                <input @bind="_componentSerialNumber" />
+                            </label>
+                            <label class="form-field">
+                                <span>Serial Photo #1</span>
+                                <InputFile OnChange="OnSerial1Selected" accept="image/*" />
+                            </label>
+                            <label class="form-field">
+                                <span>Serial Photo #2</span>
+                                <InputFile OnChange="OnSerial2Selected" accept="image/*" />
+                            </label>
+                        </div>
+
+                        <label class="form-field form-field-full">
+                            <span>Notes *</span>
+                            <textarea @bind="_notes" rows="8"></textarea>
+                        </label>
+
+                        @if (!string.IsNullOrWhiteSpace(_validationMessage))
+                        {
+                            <div class="validation-banner">@_validationMessage</div>
+                        }
+
+                        <div class="form-actions">
+                            <button class="sync-button" type="button" @onclick="SaveAsync" disabled="@_saving">@(_saving ? "Saving..." : "Create Quick Claim")</button>
+                            <button class="ghost-link-button" type="button" @onclick="@(() => Nav.NavigateTo("/claims"))">Back</button>
+                        </div>
+                    </article>
+                </div>
+            </details>
+        </div>
+    </section>
+}
+
+@code {
+    private IReadOnlyList<CustomerSummary> _customers = [];
+    private IReadOnlyList<BuilderCompanyOption> _builders = [];
+    private bool _loading = true;
+    private bool _saving;
+    private bool _placesInitialized;
+    private string _currentUsername = string.Empty;
+    private string? _validationMessage;
+    private string _addressInput = string.Empty;
+    private string _city = string.Empty;
+    private string _state = string.Empty;
+    private string _zip = string.Empty;
+    private decimal? _latitude;
+    private decimal? _longitude;
+    private string _contactName = string.Empty;
+    private string _contactPhone = string.Empty;
+    private string _originalInstallerDealer = string.Empty;
+    private string _startupDateString = string.Empty;
+    private string _failureDateString = string.Empty;
+    private string _repairDateString = DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd");
+    private string _componentCode = string.Empty;
+    private string _modelNumber = string.Empty;
+    private string _idSerialNumber = string.Empty;
+    private string _componentSerialNumber = string.Empty;
+    private string _notes = string.Empty;
+    private IBrowserFile? _serial1File;
+    private IBrowserFile? _serial2File;
+    private DotNetObjectReference<QuickClaimEntry>? _dotNetRef;
+
+    private bool HasGooglePlacesConfigured => !string.IsNullOrWhiteSpace(Configuration["Google:ApiKey"]);
+
+    private IReadOnlyList<BuilderCompanyOption> BuilderSuggestions => _builders;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _customers = await FieldData.GetCustomersAsync();
+        _builders = await FieldData.GetBuilderCompaniesAsync();
+        try
+        {
+            var profile = await AccountClient.GetProfileAsync();
+            _currentUsername = profile.Username ?? string.Empty;
+        }
+        catch
+        {
+            _currentUsername = string.Empty;
+        }
+
+        _loading = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || !HasGooglePlacesConfigured)
+        {
+            return;
+        }
+
+        _dotNetRef ??= DotNetObjectReference.Create(this);
+        _placesInitialized = await JS.InvokeAsync<bool>("codeBlue.places.init", _dotNetRef, "quick-claim-street1-input");
+    }
+
+    private void OnAddressInputChanged(ChangeEventArgs args) => _addressInput = args.Value?.ToString() ?? string.Empty;
+    private void OnOriginalInstallerChanged(ChangeEventArgs args) => _originalInstallerDealer = args.Value?.ToString() ?? string.Empty;
+    private void OnSerial1Selected(InputFileChangeEventArgs args) => _serial1File = args.File;
+    private void OnSerial2Selected(InputFileChangeEventArgs args) => _serial2File = args.File;
+
+    [JSInvokable]
+    public async Task OnPlaceSelected(PlaceSelection selection)
+    {
+        _addressInput = selection.Street1;
+        _city = selection.City;
+        _state = selection.State;
+        _zip = selection.Zip;
+        _latitude = selection.Latitude.HasValue ? (decimal)selection.Latitude.Value : null;
+        _longitude = selection.Longitude.HasValue ? (decimal)selection.Longitude.Value : null;
+        await HydrateFromAddressAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private Task HydrateFromAddressAsync()
+    {
+        var key = AddressKeyUtil.MakeAddressKey(_addressInput.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? _addressInput);
+        var match = _customers.FirstOrDefault(customer => AddressKeyUtil.MakeAddressKey(customer.Street1) == key || AddressKeyUtil.MakeAddressKey(customer.Address) == key);
+        if (match is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        _addressInput = match.Address;
+        _city = match.City;
+        _state = match.State;
+        _zip = match.Zip;
+        _latitude ??= match.Latitude;
+        _longitude ??= match.Longitude;
+        _contactName = string.IsNullOrWhiteSpace(match.ContactName) ? _contactName : match.ContactName;
+        _contactPhone = string.IsNullOrWhiteSpace(match.Phone) ? _contactPhone : match.Phone;
+        _originalInstallerDealer = string.IsNullOrWhiteSpace(match.OriginalInstallerDealer) ? _originalInstallerDealer : match.OriginalInstallerDealer;
+        _startupDateString = match.StartupDate?.ToString("yyyy-MM-dd") ?? _startupDateString;
+        return HydrateFromBuilderAsync();
+    }
+
+    private Task HydrateFromBuilderAsync()
+    {
+        var match = _builders.FirstOrDefault(builder => BuilderCompanyUtil.NormalizeKey(builder.CompanyName) == BuilderCompanyUtil.NormalizeKey(_originalInstallerDealer));
+        if (match is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        _originalInstallerDealer = match.CompanyName;
+        return Task.CompletedTask;
+    }
+
+    private async Task SaveAsync()
+    {
+        _validationMessage = null;
+        if (string.IsNullOrWhiteSpace(_addressInput) || string.IsNullOrWhiteSpace(_city) || string.IsNullOrWhiteSpace(_state) || string.IsNullOrWhiteSpace(_zip))
+        {
+            _validationMessage = "Address, city, state, and zip are required.";
+            return;
+        }
+
+        if (!DateOnly.TryParse(_repairDateString, out var repairDate))
+        {
+            _validationMessage = "Repair date is required.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_notes))
+        {
+            _validationMessage = "Notes are required.";
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            DateOnly? startupDate = DateOnly.TryParse(_startupDateString, out var parsedStartup) ? parsedStartup : null;
+            DateOnly? failureDate = DateOnly.TryParse(_failureDateString, out var parsedFailure) ? parsedFailure : null;
+            var street1 = _addressInput.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? _addressInput;
+
+            await FieldData.QueueQuickClaimAsync(new QuickClaimEntryDraft
+            {
+                Street1 = street1,
+                City = _city.Trim(),
+                State = _state.Trim(),
+                Zip = _zip.Trim(),
+                Latitude = _latitude,
+                Longitude = _longitude,
+                ContactName = _contactName.Trim(),
+                ContactPhone = _contactPhone.Trim(),
+                OriginalInstallerDealer = _originalInstallerDealer.Trim(),
+                OriginalInstallationDate = startupDate,
+                Equipment = BuildEquipmentDescription(),
+                FailureDate = failureDate,
+                RepairDate = repairDate,
+                ComponentCode = _componentCode.Trim(),
+                ModelNumber = _modelNumber.Trim(),
+                IdSerialNumber = _idSerialNumber.Trim(),
+                ComponentSerialNumber = _componentSerialNumber.Trim(),
+                Notes = _notes.Trim(),
+                CompletedBy = _currentUsername,
+                Serial1Photo = await BuildClaimImagePayloadAsync(_serial1File),
+                Serial2Photo = await BuildClaimImagePayloadAsync(_serial2File)
+            });
+
+            Nav.NavigateTo("/claims");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private string BuildEquipmentDescription()
+    {
+        var parts = new[] { _componentCode.Trim(), _modelNumber.Trim() }.Where(x => !string.IsNullOrWhiteSpace(x));
+        var description = string.Join(" • ", parts);
+        return string.IsNullOrWhiteSpace(description) ? "Quick Claim" : description;
+    }
+
+    private static async Task<ClaimImagePayload?> BuildClaimImagePayloadAsync(IBrowserFile? file)
+    {
+        if (file is null)
+        {
+            return null;
+        }
+
+        await using var stream = file.OpenReadStream(maxAllowedSize: 5_000_000);
+        using var ms = new MemoryStream();
+        await stream.CopyToAsync(ms);
+
+        return new ClaimImagePayload
+        {
+            FileName = file.Name,
+            ContentType = string.IsNullOrWhiteSpace(file.ContentType) ? "image/jpeg" : file.ContentType,
+            Base64Data = Convert.ToBase64String(ms.ToArray())
+        };
+    }
+
+    public void Dispose()
+    {
+        if (_placesInitialized)
+        {
+            _ = JS.InvokeVoidAsync("codeBlue.places.destroy", "quick-claim-street1-input");
+        }
+
+        _dotNetRef?.Dispose();
+    }
+}

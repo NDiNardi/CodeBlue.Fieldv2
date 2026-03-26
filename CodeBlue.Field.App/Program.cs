@@ -15,12 +15,18 @@ if (string.IsNullOrWhiteSpace(apiBaseUrl))
 }
 
 var appBaseUri = new Uri(builder.HostEnvironment.BaseAddress, UriKind.Absolute);
-var localHttpsApiBaseUrl = builder.Configuration["LocalHttpsApiBaseUrl"];
-if (appBaseUri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
-    && appBaseUri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
-    && !string.IsNullOrWhiteSpace(localHttpsApiBaseUrl))
+var localHttpApiBaseUrl = builder.Configuration["LocalHttpApiBaseUrl"];
+var isLocalDevHost =
+    appBaseUri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+    || appBaseUri.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase);
+
+if (isLocalDevHost
+    && builder.HostEnvironment.IsDevelopment())
 {
-    apiBaseUrl = localHttpsApiBaseUrl;
+    if (!string.IsNullOrWhiteSpace(localHttpApiBaseUrl))
+    {
+        apiBaseUrl = localHttpApiBaseUrl;
+    }
 }
 
 builder.Services.AddScoped(_ => new HttpClient

@@ -6,8 +6,6 @@
     host === "127.0.0.1" ||
     host === "::1";
 
-  if (isLocal) return;
-
   let deferredPrompt = null;
   const installStateSubscribers = new Set();
 
@@ -21,7 +19,7 @@
   function currentState() {
     return {
       installed: window.pwaIsInstalled(),
-      canPrompt: !!deferredPrompt,
+      canPrompt: !isLocal && !!deferredPrompt,
       isIosSafari: isIosSafari()
     };
   }
@@ -37,6 +35,7 @@
   }
 
   window.addEventListener("beforeinstallprompt", (e) => {
+    if (isLocal) return;
     e.preventDefault();
     deferredPrompt = e;
     notifySubscribers();
@@ -48,10 +47,11 @@
   });
 
   window.pwaCanPromptInstall = function () {
-    return !!deferredPrompt;
+    return !isLocal && !!deferredPrompt;
   };
 
   window.pwaPromptInstall = async function () {
+    if (isLocal) return { ok: false, reason: "local-dev" };
     if (!deferredPrompt) return { ok: false, reason: "not-available" };
 
     deferredPrompt.prompt();

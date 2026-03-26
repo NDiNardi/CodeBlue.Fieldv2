@@ -1,0 +1,353 @@
+@page "/service-requests/quick"
+@attribute [Authorize(Roles = "Admin,Office")]
+@using CodeBlue.Field.App.Models
+@using CodeBlue.Field.App.Services
+@using CodeBlue.Field.App.Util
+@using Microsoft.Extensions.Configuration
+@using Microsoft.JSInterop
+@inject IFieldDataService FieldData
+@inject IConfiguration Configuration
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Quick Request</PageTitle>
+
+@if (_loading)
+{
+    <p>Loading quick request...</p>
+}
+else
+{
+    <section class="field-page field-work-order-page">
+        <section class="section-block">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">QUICK REQUEST</p>
+                </div>
+            </div>
+        </section>
+
+        @if (!string.IsNullOrWhiteSpace(_saveMessage))
+        {
+            <div class="sync-result">
+                <strong>@_saveMessage</strong>
+                <span>The service request was stored locally in the field snapshot.</span>
+            </div>
+        }
+
+        <div class="field-expansion-list">
+            <details class="field-expansion" open>
+                <summary class="field-expansion-summary">
+                    <span class="field-expansion-title">Service Location</span>
+                </summary>
+                <div class="field-expansion-body">
+                    <article class="field-paper">
+                        <div class="claim-form-grid">
+                            <label class="form-field form-field-full">
+                                <span>Address *</span>
+                                <input id="quick-request-street1-input" list="quick-request-addresses" value="@_addressInput" @oninput="OnAddressInputChanged" @onblur="HydrateFromAddressAsync" placeholder="Start typing an address" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+                                <datalist id="quick-request-addresses">
+                                    @foreach (var suggestion in AddressSuggestions)
+                                    {
+                                        <option value="@suggestion"></option>
+                                    }
+                                </datalist>
+                                @if (!HasGooglePlacesConfigured)
+                                {
+                                    <span class="muted-note">Address autocomplete is currently unavailable.</span>
+                                }
+                            </label>
+                            <label class="form-field">
+                                <span>City *</span>
+                                <input @bind="_city" />
+                            </label>
+                            <label class="form-field">
+                                <span>State *</span>
+                                <input @bind="_state" />
+                            </label>
+                            <label class="form-field">
+                                <span>Zip *</span>
+                                <input @bind="_zip" />
+                            </label>
+                            <label class="form-field">
+                                <span>Gate Code(s)</span>
+                                <input @bind="_gateCodes" />
+                            </label>
+                            <label class="form-field">
+                                <span>Animals Present</span>
+                                <select @bind="_animalsPresentValue">
+                                    <option value="false">No</option>
+                                    <option value="true">Yes</option>
+                                </select>
+                            </label>
+                        </div>
+                    </article>
+                </div>
+            </details>
+
+            <details class="field-expansion" open>
+                <summary class="field-expansion-summary">
+                    <span class="field-expansion-title">Contacts</span>
+                </summary>
+                <div class="field-expansion-body">
+                    <article class="field-paper">
+                        <div class="claim-form-grid">
+                            <label class="form-field">
+                                <span>Service Contact *</span>
+                                <input @bind="_serviceContactName" />
+                            </label>
+                            <label class="form-field">
+                                <span>Service Phone *</span>
+                                <input @bind="_serviceContactPhone" />
+                            </label>
+                            <label class="form-field">
+                                <span>Builder Company *</span>
+                                <input list="quick-request-builders" value="@_builderCompanyName" @oninput="OnBuilderInputChanged" @onblur="HydrateFromBuilderAsync" />
+                                <datalist id="quick-request-builders">
+                                    @foreach (var builder in BuilderSuggestions)
+                                    {
+                                        <option value="@builder.CompanyName"></option>
+                                    }
+                                </datalist>
+                            </label>
+                            <label class="form-field">
+                                <span>Builder Contact</span>
+                                <input @bind="_builderContactName" />
+                            </label>
+                            <label class="form-field">
+                                <span>Builder Phone</span>
+                                <input @bind="_builderContactPhone" />
+                            </label>
+                            <label class="form-field">
+                                <span>Builder Email</span>
+                                <input @bind="_builderEmail" />
+                            </label>
+                            <label class="form-field">
+                                <span>Startup Date</span>
+                                <input type="date" value="@_startupDateString" @onchange="args => _startupDateString = args.Value?.ToString() ?? string.Empty" />
+                            </label>
+                        </div>
+                    </article>
+                </div>
+            </details>
+
+            <details class="field-expansion" open>
+                <summary class="field-expansion-summary">
+                    <span class="field-expansion-title">Problem</span>
+                </summary>
+                <div class="field-expansion-body">
+                    <article class="field-paper">
+                        <label class="form-field form-field-full">
+                            <span>Problem Description *</span>
+                            <textarea @bind="_problemDescription" rows="8"></textarea>
+                        </label>
+
+                        @if (!string.IsNullOrWhiteSpace(_validationMessage))
+                        {
+                            <div class="validation-banner">@_validationMessage</div>
+                        }
+
+                        <div class="form-actions">
+                            <button class="sync-button" type="button" @onclick="SaveAsync" disabled="@_saving">@(_saving ? "Saving..." : "Create Quick Request")</button>
+                            <button class="ghost-link-button" type="button" @onclick="@(() => Nav.NavigateTo("/service-requests"))">Back</button>
+                        </div>
+                    </article>
+                </div>
+            </details>
+        </div>
+    </section>
+}
+
+@code {
+    private IReadOnlyList<CustomerSummary> _customers = [];
+    private IReadOnlyList<WorkOrderSummary> _requests = [];
+    private IReadOnlyList<BuilderCompanyOption> _builders = [];
+    private bool _loading = true;
+    private bool _saving;
+    private bool _placesInitialized;
+    private string? _saveMessage;
+    private string? _validationMessage;
+    private string _addressInput = string.Empty;
+    private string _city = string.Empty;
+    private string _state = string.Empty;
+    private string _zip = string.Empty;
+    private decimal? _latitude;
+    private decimal? _longitude;
+    private string _gateCodes = string.Empty;
+    private string _animalsPresentValue = "false";
+    private string _serviceContactName = string.Empty;
+    private string _serviceContactPhone = string.Empty;
+    private string _builderCompanyName = string.Empty;
+    private string _builderContactName = string.Empty;
+    private string _builderContactPhone = string.Empty;
+    private string _builderEmail = string.Empty;
+    private string _startupDateString = string.Empty;
+    private string _problemDescription = string.Empty;
+    private DotNetObjectReference<QuickRequest>? _dotNetRef;
+
+    private bool HasGooglePlacesConfigured => !string.IsNullOrWhiteSpace(Configuration["Google:ApiKey"]);
+
+    private IReadOnlyList<string> AddressSuggestions =>
+        _customers.Select(customer => customer.Address).Where(address => !string.IsNullOrWhiteSpace(address)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(address => address).ToList();
+
+    private IReadOnlyList<BuilderCompanyOption> BuilderSuggestions => _builders;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _customers = await FieldData.GetCustomersAsync();
+        _requests = await FieldData.GetWorkOrdersAsync();
+        _builders = await FieldData.GetBuilderCompaniesAsync();
+        _loading = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || !HasGooglePlacesConfigured)
+        {
+            return;
+        }
+
+        _dotNetRef ??= DotNetObjectReference.Create(this);
+        _placesInitialized = await JS.InvokeAsync<bool>("codeBlue.places.init", _dotNetRef, "quick-request-street1-input");
+    }
+
+    private void OnAddressInputChanged(ChangeEventArgs args) => _addressInput = args.Value?.ToString() ?? string.Empty;
+    private void OnBuilderInputChanged(ChangeEventArgs args) => _builderCompanyName = args.Value?.ToString() ?? string.Empty;
+
+    [JSInvokable]
+    public async Task OnPlaceSelected(PlaceSelection selection)
+    {
+        _addressInput = selection.Street1;
+        _city = selection.City;
+        _state = selection.State;
+        _zip = selection.Zip;
+        _latitude = selection.Latitude.HasValue ? (decimal)selection.Latitude.Value : null;
+        _longitude = selection.Longitude.HasValue ? (decimal)selection.Longitude.Value : null;
+        await HydrateFromAddressAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private Task HydrateFromAddressAsync()
+    {
+        var match = FindCustomerByAddress(_addressInput);
+        if (match is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        _addressInput = match.Address;
+        _city = match.City;
+        _state = match.State;
+        _zip = match.Zip;
+        _latitude ??= match.Latitude;
+        _longitude ??= match.Longitude;
+        _gateCodes = string.IsNullOrWhiteSpace(match.GateCodes) ? _gateCodes : match.GateCodes;
+        _serviceContactName = string.IsNullOrWhiteSpace(match.ContactName) ? _serviceContactName : match.ContactName;
+        _serviceContactPhone = string.IsNullOrWhiteSpace(match.Phone) ? _serviceContactPhone : match.Phone;
+        _builderCompanyName = string.IsNullOrWhiteSpace(match.OriginalInstallerDealer) ? _builderCompanyName : match.OriginalInstallerDealer;
+        _startupDateString = match.StartupDate?.ToString("yyyy-MM-dd") ?? _startupDateString;
+
+        var recentRequest = _requests.Where(request => request.CustomerId == match.Id)
+            .OrderByDescending(request => request.DateSubmitted)
+            .FirstOrDefault();
+
+        if (recentRequest is not null)
+        {
+            _builderContactName = string.IsNullOrWhiteSpace(recentRequest.BuilderContactName) ? _builderContactName : recentRequest.BuilderContactName;
+            _builderContactPhone = string.IsNullOrWhiteSpace(recentRequest.BuilderContactPhone) ? _builderContactPhone : recentRequest.BuilderContactPhone;
+            _builderEmail = string.IsNullOrWhiteSpace(recentRequest.BuilderEmail) ? _builderEmail : recentRequest.BuilderEmail;
+        }
+
+        return HydrateFromBuilderAsync();
+    }
+
+    private Task HydrateFromBuilderAsync()
+    {
+        var match = _builders.FirstOrDefault(builder => BuilderCompanyUtil.NormalizeKey(builder.CompanyName) == BuilderCompanyUtil.NormalizeKey(_builderCompanyName));
+        if (match is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        _builderCompanyName = match.CompanyName;
+        _builderContactName = string.IsNullOrWhiteSpace(match.ContactName) ? _builderContactName : match.ContactName;
+        _builderContactPhone = string.IsNullOrWhiteSpace(match.ContactPhone) ? _builderContactPhone : match.ContactPhone;
+        _builderEmail = string.IsNullOrWhiteSpace(match.ContactEmail) ? _builderEmail : match.ContactEmail;
+        return Task.CompletedTask;
+    }
+
+    private async Task SaveAsync()
+    {
+        _validationMessage = null;
+        if (string.IsNullOrWhiteSpace(_addressInput) || string.IsNullOrWhiteSpace(_city) || string.IsNullOrWhiteSpace(_state) || string.IsNullOrWhiteSpace(_zip))
+        {
+            _validationMessage = "Address, city, state, and zip are required.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_serviceContactName) || string.IsNullOrWhiteSpace(_serviceContactPhone))
+        {
+            _validationMessage = "Service contact name and phone are required.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_builderCompanyName) || string.IsNullOrWhiteSpace(_problemDescription))
+        {
+            _validationMessage = "Builder company and problem description are required.";
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            DateOnly? startupDate = DateOnly.TryParse(_startupDateString, out var parsedStartup) ? parsedStartup : null;
+            var street1 = _addressInput.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? _addressInput;
+
+            var requestId = await FieldData.QueueQuickServiceRequestAsync(new QuickServiceRequestDraft
+            {
+                Street1 = street1,
+                City = _city.Trim(),
+                State = _state.Trim(),
+                Zip = _zip.Trim(),
+                Latitude = _latitude,
+                Longitude = _longitude,
+                ServiceContactName = _serviceContactName.Trim(),
+                ServiceContactPhone = _serviceContactPhone.Trim(),
+                GateCodes = _gateCodes.Trim(),
+                AnimalsPresent = string.Equals(_animalsPresentValue, "true", StringComparison.OrdinalIgnoreCase),
+                BuilderCompanyName = _builderCompanyName.Trim(),
+                BuilderContactName = _builderContactName.Trim(),
+                BuilderContactPhone = _builderContactPhone.Trim(),
+                BuilderEmail = _builderEmail.Trim(),
+                StartupDate = startupDate,
+                ProblemDescription = _problemDescription.Trim()
+            });
+
+            _saveMessage = "Quick request created locally.";
+            Nav.NavigateTo($"/service-requests/{requestId}");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private CustomerSummary? FindCustomerByAddress(string input)
+    {
+        var key = AddressKeyUtil.MakeAddressKey(input.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? input);
+        return _customers.FirstOrDefault(customer =>
+            AddressKeyUtil.MakeAddressKey(customer.Street1) == key
+            || AddressKeyUtil.MakeAddressKey(customer.Address) == key);
+    }
+
+    public void Dispose()
+    {
+        if (_placesInitialized)
+        {
+            _ = JS.InvokeVoidAsync("codeBlue.places.destroy", "quick-request-street1-input");
+        }
+
+        _dotNetRef?.Dispose();
+    }
+}

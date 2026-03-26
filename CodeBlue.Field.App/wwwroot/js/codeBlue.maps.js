@@ -49,7 +49,9 @@
       defaultLat: 36.175052,
       defaultLng: -115.156251,
       resizeObserver: null,
-      dotNetRef: null
+      dotNetRef: null,
+      popupRestoreViewport: null,
+      defaultZoom: 10
     }
   };
 
@@ -202,7 +204,12 @@
       state.byId.delete(elementId);
     }
 
-    const map = L.map(el, { zoomControl: true, attributionControl: true }).setView([lat, lng], zoom || DEFAULT_ZOOM);
+    const map = L.map(el, {
+      zoomControl: true,
+      attributionControl: true,
+      zoomDelta: 0.25,
+      zoomSnap: 0.25
+    }).setView([lat, lng], zoom || DEFAULT_ZOOM);
 
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
@@ -408,7 +415,12 @@
     "t":  "rgba(22,163,74,0.95)",   // Tue - green
     "w":  "rgba(245,158,11,0.95)",  // Wed - amber
     "th": "rgba(147,51,234,0.95)",  // Thu - purple
-    "f":  "rgba(239,68,68,0.95)"    // Fri - red
+    "f":  "rgba(239,68,68,0.95)",   // Fri - red
+    "1":  "rgba(37,99,235,0.95)",
+    "2":  "rgba(22,163,74,0.95)",
+    "3":  "rgba(245,158,11,0.95)",
+    "4":  "rgba(147,51,234,0.95)",
+    "5":  "rgba(239,68,68,0.95)"
   };
 
   const UNSCHEDULED_COLOR = "rgba(107,114,128,0.95)";
@@ -483,6 +495,52 @@
     });
   }
 
+  function preserveViewport(m) {
+    return safeSchedule(function () {
+      if (!m) return null;
+      return {
+        center: m.getCenter ? m.getCenter() : null,
+        zoom: typeof m.getZoom === "function" ? m.getZoom() : null
+      };
+    });
+  }
+
+  function restoreViewport(m, viewport) {
+    safeSchedule(function () {
+      if (!m || !viewport || !viewport.center || !Number.isFinite(viewport.zoom)) return;
+      m.setView(viewport.center, viewport.zoom, { animate: false });
+    });
+  }
+
+  function invokeScheduleDotNet(methodName, ...args) {
+    if (!state.schedule.dotNetRef || typeof state.schedule.dotNetRef.invokeMethodAsync !== "function") {
+      return;
+    }
+
+    try {
+      const pending = state.schedule.dotNetRef.invokeMethodAsync(methodName, ...args);
+      if (pending && typeof pending.catch === "function") {
+        pending.catch(function (err) {
+          const msg = err && err.message ? String(err.message) : String(err || "");
+          if (msg.includes("There is no tracked object") || msg.includes("already disposed")) {
+            state.schedule.dotNetRef = null;
+            return;
+          }
+
+          console.warn("[cbScheduleMap] dotNet callback failed:", err);
+        });
+      }
+    } catch (err) {
+      const msg = err && err.message ? String(err.message) : String(err || "");
+      if (msg.includes("There is no tracked object") || msg.includes("already disposed")) {
+        state.schedule.dotNetRef = null;
+        return;
+      }
+
+      console.warn("[cbScheduleMap] dotNet callback threw:", err);
+    }
+  }
+
   function buildPopupHtml(pin, isUnscheduled) {
     const titleText = pin.label ?? pin.Label ?? "";
     const addrText = pin.address ?? pin.Address ?? "";
@@ -526,8 +584,13 @@
       state.schedule.defaultLat = Number(defaultLat) || state.schedule.defaultLat;
       state.schedule.defaultLng = Number(defaultLng) || state.schedule.defaultLng;
       state.schedule.targetElementId = el.id;
+      state.schedule.defaultZoom = Number(state.schedule.defaultZoom) || 10;
 
-      const m = L.map(el, { zoomControl: true });
+      const m = L.map(el, {
+        zoomControl: true,
+        zoomDelta: 0.25,
+        zoomSnap: 0.25
+      });
       state.schedule.map = m;
 
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -535,7 +598,7 @@
         attribution: "&copy; OpenStreetMap contributors"
       }).addTo(m);
 
-      m.setView([state.schedule.defaultLat, state.schedule.defaultLng], 10);
+      m.setView([state.schedule.defaultLat, state.schedule.defaultLng], state.schedule.defaultZoom);
 
       // panes so unscheduled pins always sit on top
       if (!m.getPane("cbAssignedPins")) {
@@ -579,7 +642,7 @@
     });
   }
 
-  async function renderSchedulePinsInternal(elementId, pins, defaultLat, defaultLng) {
+  async function renderSchedulePinsInternal(elementId, pins, defaultLat, defaultLng, options) {
     if (!hasLeaflet()) {
       warn("Leaflet not loaded for scheduler map.");
       return;
@@ -610,12 +673,20 @@
       return;
     }
 
+    const requestedDefaultZoom = Number(options && options.defaultZoom);
+    if (Number.isFinite(requestedDefaultZoom)) {
+      state.schedule.defaultZoom = requestedDefaultZoom;
+    }
+
+    const preserveView = !!(options && options.preserveView);
+    const viewport = preserveView ? preserveViewport(m) : null;
+
     clearScheduleMarkers();
     state.schedule.lastPins = Array.isArray(pins) ? pins : [];
 
     const pts = [];
     if (!pins || pins.length === 0) {
-      try { m.setView([state.schedule.defaultLat, state.schedule.defaultLng], 10); } catch {}
+      try { m.setView([state.schedule.defaultLat, state.schedule.defaultLng], state.schedule.defaultZoom); } catch {}
       return;
     }
 
@@ -654,13 +725,45 @@
       const popup = buildPopupHtml(pin, isUnscheduled);
       if (popup) marker.bindPopup(popup);
 
+      marker.on("popupclose", function () {
+        safeSchedule(function () {
+          if (state.schedule.popupRestoreViewport) {
+            restoreViewport(m, state.schedule.popupRestoreViewport);
+            state.schedule.popupRestoreViewport = null;
+          }
+        });
+      });
+
       marker.on("click", function () {
         safeSchedule(function () {
           const id = pin.id ?? pin.Id;
           if (!id) return;
 
-          if (state.schedule.dotNetRef && typeof state.schedule.dotNetRef.invokeMethodAsync === "function") {
-            state.schedule.dotNetRef.invokeMethodAsync("OnMapPinClicked", String(id), !!isUnscheduled);
+          if (popup && typeof marker.openPopup === "function") {
+            state.schedule.popupRestoreViewport = preserveViewport(m);
+            marker.openPopup();
+          }
+
+          invokeScheduleDotNet("OnMapPinArmed", String(id));
+
+          if (isUnscheduled) {
+            const card = document.getElementById(`wo-${String(id)}`);
+            const tray = document.querySelector("[data-unscheduled-tray='true']");
+            const dropzone = tray ? tray.querySelector(".sch-dropzone") : null;
+
+            if (card && dropzone && dropzone.contains(card) && dropzone.firstElementChild !== card) {
+              dropzone.insertBefore(card, dropzone.firstElementChild);
+            }
+
+            window.setTimeout(function () {
+              safeSchedule(function () {
+                if (window.ScheduleBoard) {
+                  window.ScheduleBoard.scrollToColumn && window.ScheduleBoard.scrollToColumn("unscheduled");
+                  window.ScheduleBoard.scrollToWorkOrderInColumn && window.ScheduleBoard.scrollToWorkOrderInColumn("unscheduled", String(id), { align: "top" });
+                  window.ScheduleBoard.pulseWorkOrder && window.ScheduleBoard.pulseWorkOrder(String(id));
+                }
+              });
+            }, 0);
           }
         });
       });
@@ -669,18 +772,28 @@
       pts.push([lat, lng]);
     }
 
-    safeFitBounds(m, pts);
+    if (preserveView && viewport) {
+      restoreViewport(m, viewport);
+    } else {
+      safeFitBounds(m, pts);
+    }
     try { m.invalidateSize(true); } catch {}
   }
 
   window.cbScheduleMap = window.cbScheduleMap || {};
 
-  window.cbScheduleMap.renderPins = function (pins, defaultLat, defaultLng) {
-    renderSchedulePinsInternal(null, pins, defaultLat, defaultLng);
+  window.cbScheduleMap.renderPins = function (pins, defaultLat, defaultLng, options) {
+    renderSchedulePinsInternal(null, pins, defaultLat, defaultLng, options);
   };
 
-  window.cbScheduleMap.renderPinsTo = function (elementId, pins, defaultLat, defaultLng) {
-    renderSchedulePinsInternal(elementId, pins, defaultLat, defaultLng);
+  window.cbScheduleMap.renderPinsTo = function (elementId, pins, defaultLat, defaultLng, options) {
+    renderSchedulePinsInternal(elementId, pins, defaultLat, defaultLng, options);
+  };
+
+  window.cbScheduleMap.setDotNetRef = function (dotNetRef) {
+    safeSchedule(function () {
+      state.schedule.dotNetRef = dotNetRef || null;
+    });
   };
 
   window.cbScheduleMap.invalidate = function () {
@@ -699,18 +812,10 @@
     }
   };
 
-  window.cbScheduleMap.setDotNetRef = function (dotNetRef) {
-    safeSchedule(function () {
-      state.schedule.dotNetRef = dotNetRef || null;
-    });
-  };
-
   window.cbScheduleMap.unassignPin = function (id) {
     safeSchedule(function () {
       if (!id) return;
-      if (state.schedule.dotNetRef && typeof state.schedule.dotNetRef.invokeMethodAsync === "function") {
-        state.schedule.dotNetRef.invokeMethodAsync("OnMapPinRequested", String(id));
-      }
+      invokeScheduleDotNet("OnMapPinRequested", String(id));
     });
   };
 

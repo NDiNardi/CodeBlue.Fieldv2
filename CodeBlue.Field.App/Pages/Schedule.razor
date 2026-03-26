@@ -1,5 +1,4 @@
 @page "/schedule"
-@page "/schedule/{Date:datetime?}"
 @attribute [Authorize(Roles = "Admin,Office")]
 @using CodeBlue.Field.App.Models
 @using CodeBlue.Field.App.Services
@@ -7,932 +6,590 @@
 @using Microsoft.JSInterop
 @inject IFieldDataService FieldData
 @inject IJSRuntime JS
+@implements IDisposable
 
-<PageTitle>Schedule</PageTitle>
+<PageTitle>Route Planning</PageTitle>
 
 @if (!_hasLoaded)
 {
-    <p>Loading schedule...</p>
+    <p>Loading route planning...</p>
 }
 else
 {
     <section class="sch-page">
         <section class="section-block sch-headerbar sch-header">
             <div class="sch-headerbar-inner sch-header-inner">
-                <p class="eyebrow">Scheduling</p>
+                <p class="eyebrow">Route Planning</p>
             </div>
         </section>
 
         <div class="sch-layout">
-            <div class="sch-top-row">
-                <div class="sch-mobile-shell">
-                    <section class="section-block sch-map-card">
-                        <div class="sch-date-toolbar">
-                            <button class="day-nav-button" type="button" @onclick="PrevWeek" aria-label="Previous week">
-                                <svg class="nav-chevron-icon" viewBox="0 0 24 24" aria-hidden="true">
-                                    <path d="M14.41 7.41 9.83 12l4.58 4.59L13 18l-6-6 6-6z"></path>
-                                </svg>
-                            </button>
-                            <input class="compact-input sch-date-input" type="date" value="@_selectedDayString" @onchange="OnSelectedDateChanged" />
-                            <button class="day-nav-button" type="button" @onclick="NextWeek" aria-label="Next week">
-                                <svg class="nav-chevron-icon" viewBox="0 0 24 24" aria-hidden="true">
-                                    <path d="m10 6 6 6-6 6-1.41-1.41L13.17 12 8.59 7.41z"></path>
-                                </svg>
-                            </button>
-                        </div>
-                        <div class="sch-map-header">
-                            <div class="sch-radio-group" role="radiogroup" aria-label="Schedule view mode">
-                                <label class="sch-radio-option">
-                                    <input type="radio" name="schedule-mobile-mode" checked="@(_viewMode == "assign")" @onchange="(_) => SetAssignMode()" />
-                                    <span>Assign</span>
-                                </label>
-                                <label class="sch-radio-option">
-                                    <input type="radio" name="schedule-mobile-mode" checked="@(_viewMode == "route")" @onchange="(_) => SetRouteMode()" />
-                                    <span>Route</span>
-                                </label>
-                            </div>
-                            <span class="section-tag">Saved locally</span>
-                        </div>
+            <section class="section-block sch-map-card">
+                <div class="sch-map-header">
+                    <div class="sch-radio-group" role="radiogroup" aria-label="Route planning mode">
+                        <label class="sch-radio-option">
+                            <input type="radio" name="route-mode" checked="@(_viewMode == "assign")" @onchange="(_) => SetAssignMode()" />
+                            <span>Assign</span>
+                        </label>
+                        <label class="sch-radio-option">
+                            <input type="radio" name="route-mode" checked="@(_viewMode == "route")" @onchange="(_) => SetRouteMode()" />
+                            <span>Route</span>
+                        </label>
+                    </div>
+                    <span class="section-tag">Saved locally</span>
+                </div>
 
-                        <div id="cbScheduleMapMobile" class="sch-map"></div>
-                    </section>
+                <div class="sch-route-daystrip">
+                    @foreach (var group in RouteGroups)
+                    {
+                        <button class="@($"sch-daypill {GroupPillClass(group)} {(group == _selectedGroup ? "is-active" : string.Empty)}")" type="button" @onclick="() => SelectGroup(group)">
+                            Group @group
+                        </button>
+                    }
+                </div>
 
-                    <section class="section-block sch-board-card">
-                        @if (_viewMode == "assign")
+                <div id="cbScheduleMap" class="sch-map"></div>
+            </section>
+
+            <section class="section-block sch-board-card">
+                @if (_viewMode == "assign")
+                {
+                    <div class="sch-mobile-daybar">
+                        @foreach (var group in RouteGroups)
                         {
-                            <div class="sch-mobile-daybar">
-                                @foreach (var day in WeekDays)
-                                {
-                                    <button class="@($"sch-daypill {DayPillClass(day)} {(day == _selectedDay ? "is-active" : string.Empty)}")" type="button" @onclick="() => SelectDay(day)">
-                                        @day.ToString("ddd")
-                                    </button>
-                                }
-                            </div>
+                            <button class="@($"sch-daypill {GroupPillClass(group)} {(group == _selectedGroup ? "is-active" : string.Empty)}")" type="button" @onclick="() => SelectGroup(group)">
+                                Group @group
+                            </button>
+                        }
+                    </div>
 
-                            <div class="sch-mobile-minidrops">
-                                @foreach (var day in WeekDays)
-                                {
-                                        <div class="sch-mini-slot">
-                                            <div class="sch-mini-dropzone @(IsArmed ? "sch-dropzone-armed" : string.Empty)"
-                                             @ondragover:preventDefault
-                                             @ondragover="OnDragOver"
-                                             @ondrop="() => OnDropToDayAsync(day)"
-                                             @onclick="() => AssignArmedToDayAsync(day)">
-                                                <span class="sch-mini-date">@day.ToString("M/d")</span>
-                                                <strong class="sch-mini-count">@WorkForDay(day).Count</strong>
-                                            </div>
-                                        </div>
-                                    }
-                                </div>
-
-                            <div class="sch-mobile-tray" data-unscheduled-tray="true">
-                                <div class="sch-tray-head">
-                                    <strong class="sch-col-title">Unscheduled</strong>
-                                    <span class="muted-note">Drag into a day</span>
-                                </div>
-
-                                <div class="data-list sch-dropzone"
+                    <div class="sch-mobile-minidrops">
+                        @foreach (var group in RouteGroups)
+                        {
+                            <div class="sch-mini-slot">
+                                <div class="sch-mini-dropzone @(IsArmed ? "sch-dropzone-armed" : string.Empty)"
                                      @ondragover:preventDefault
-                                     @ondragover="OnDragOver"
-                                     @ondrop="OnDropToUnscheduledAsync">
-                                    @if (PendingRequests.Count == 0)
-                                    {
-                                        <p class="muted-note">No unscheduled work orders</p>
-                                    }
-                                    else
-                                    {
-                                        @foreach (var request in PendingRequests)
+                                     @ondrop="() => OnDropToGroupAsync(group)"
+                                     @onclick="() => AssignArmedToGroupAsync(group)">
+                                    <span class="sch-mini-date">Group @group</span>
+                                    <strong class="sch-mini-count">@WorkForGroup(group).Count</strong>
+                                </div>
+                            </div>
+                        }
+                    </div>
+
+                    <div id="col-unscheduled" class="sch-mobile-tray" data-unscheduled-tray="true" @ondragover:preventDefault @ondrop="OnDropToUnassignedAsync">
+                        <div class="sch-tray-head">
+                            <strong class="sch-col-title">Unassigned</strong>
+                            <span class="muted-note">Drag into a group</span>
+                        </div>
+
+                        <div class="data-list sch-dropzone">
+                            @if (UnassignedRequests.Count == 0)
+                            {
+                                <p class="muted-note">No unassigned service requests</p>
+                            }
+                            else
+                            {
+                                @foreach (var request in UnassignedRequests)
+                                {
+                                    @RenderScheduleCard(request)
+                                }
+                            }
+                        </div>
+                    </div>
+
+                    <div class="sch-board-desktop">
+                        <div class="sch-columns">
+                            @foreach (var group in RouteGroups)
+                            {
+                                <div id="@($"col-group-{group}")" class="schedule-column sch-col @(group == _selectedGroup ? "sch-day-selected" : string.Empty)"
+                                     @ondragover:preventDefault
+                                     @ondrop="() => OnDropToGroupAsync(group)"
+                                     @onclick="() => AssignArmedToGroupAsync(group)">
+                                    <div class="sch-col-head">
+                                        <strong class="sch-col-title">Group @group</strong>
+                                        <span class="@($"sch-daypill {GroupPillClass(group)}")">@WorkForGroup(group).Count</span>
+                                    </div>
+
+                                    <div class="data-list">
+                                        @foreach (var request in WorkForGroup(group))
                                         {
                                             @RenderScheduleCard(request)
                                         }
-                                    }
-                                </div>
-                            </div>
-
-                        }
-                        else
-                        {
-                            <div class="sch-route">
-                                <div class="sch-mobile-daybar">
-                                    @foreach (var day in WeekDays)
-                                    {
-                                        <button class="@($"sch-daypill {DayPillClass(day)} {(day == _selectedDay ? "is-active" : string.Empty)}")" type="button" @onclick="() => SelectDay(day)">
-                                            @day.ToString("ddd")
-                                        </button>
-                                    }
-                                </div>
-
-                                <div class="sch-mobile-tray sch-route-tray">
-                                    <div class="sch-tray-head">
-                                        <strong class="sch-col-title">@_selectedDay.ToString("ddd M/d") Route</strong>
-                                        <span class="section-tag">@SelectedDayStops.Count</span>
-                                        <span class="muted-note">Use arrows to reorder</span>
                                     </div>
-
-                                    <div class="data-list">
-                                        @if (SelectedDayStops.Count == 0)
-                                        {
-                                            <p class="muted-note">No route stops for this day.</p>
-                                        }
-                                        else
-                                        {
-                                            @foreach (var stop in SelectedDayStops)
-                                            {
-                                                @RenderScheduleRouteCard(stop)
-                                            }
-                                        }
-                                    </div>
-                                </div>
-                            </div>
-                        }
-                    </section>
-                </div>
-
-                <div class="sch-desktop-split">
-                    <section class="section-block sch-map-card">
-                        <div class="sch-date-toolbar">
-                            <button class="day-nav-button" type="button" @onclick="PrevWeek" aria-label="Previous week">
-                                <svg class="nav-chevron-icon" viewBox="0 0 24 24" aria-hidden="true">
-                                    <path d="M14.41 7.41 9.83 12l4.58 4.59L13 18l-6-6 6-6z"></path>
-                                </svg>
-                            </button>
-                            <input class="compact-input sch-date-input" type="date" value="@_selectedDayString" @onchange="OnSelectedDateChanged" />
-                            <button class="day-nav-button" type="button" @onclick="NextWeek" aria-label="Next week">
-                                <svg class="nav-chevron-icon" viewBox="0 0 24 24" aria-hidden="true">
-                                    <path d="m10 6 6 6-6 6-1.41-1.41L13.17 12 8.59 7.41z"></path>
-                                </svg>
-                            </button>
-                        </div>
-                        <div class="sch-map-header">
-                            <div class="sch-radio-group" role="radiogroup" aria-label="Schedule view mode">
-                                <label class="sch-radio-option">
-                                    <input type="radio" name="schedule-desktop-mode" checked="@(_viewMode == "assign")" @onchange="(_) => SetAssignMode()" />
-                                    <span>Assign</span>
-                                </label>
-                                <label class="sch-radio-option">
-                                    <input type="radio" name="schedule-desktop-mode" checked="@(_viewMode == "route")" @onchange="(_) => SetRouteMode()" />
-                                    <span>Route</span>
-                                </label>
-                            </div>
-
-                            @if (_viewMode == "route")
-                            {
-                                <div class="sch-route-daystrip">
-                                    @foreach (var day in WeekDays)
-                                    {
-                                        <button class="@($"sch-daypill {DayPillClass(day)} {(day == _selectedDay ? "is-active" : string.Empty)}")" type="button" @onclick="() => SelectDay(day)">
-                                            @day.ToString("ddd M/d")
-                                        </button>
-                                    }
                                 </div>
                             }
-
-                            <span class="section-tag">Saved locally</span>
                         </div>
 
-                        <div id="cbScheduleMapDesktop" class="sch-map"></div>
-                    </section>
+                        <div id="col-unscheduled" class="sch-mobile-tray" data-unscheduled-tray="true" @ondragover:preventDefault @ondrop="OnDropToUnassignedAsync">
+                            <div class="sch-tray-head">
+                                <strong class="sch-col-title">Unassigned</strong>
+                                <span class="muted-note">Drag into a group</span>
+                            </div>
 
-                    <section class="section-block sch-board-card">
-                        @if (_viewMode == "assign")
-                        {
-                            <div class="sch-board-desktop">
-                                <div class="sch-columns">
-                                    @foreach (var day in WeekDays)
+                            <div class="data-list sch-dropzone">
+                                @if (UnassignedRequests.Count == 0)
+                                {
+                                    <p class="muted-note">No unassigned service requests</p>
+                                }
+                                else
+                                {
+                                    @foreach (var request in UnassignedRequests)
                                     {
-                                        <div class="schedule-column sch-col @SelectedDayClass(day)"
-                                             @ondragover:preventDefault
-                                             @ondragover="OnDragOver"
-                                             @ondrop="() => OnDropToDayAsync(day)"
-                                             @onclick="() => AssignArmedToDayAsync(day)">
-                                            <div class="sch-col-head">
-                                                <strong class="sch-col-title">@day.ToString("ddd M/d")</strong>
-                                                <span class="@($"sch-daypill {DayPillClass(day)}")">@WorkForDay(day).Count</span>
-                                                <button class="icon-action ghost-action" type="button" @onclick="() => SelectDay(day)" aria-label="Select day">
-                                                    <span class="material-symbols-rounded">my_location</span>
-                                                </button>
-                                            </div>
-
-                                            <div class="data-list">
-                                                @foreach (var stop in WorkForDay(day))
-                                                {
-                                                    @RenderScheduleCard(stop)
-                                                }
-                                            </div>
-                                        </div>
+                                        @RenderScheduleCard(request)
                                     }
-                                </div>
-
-                                <div class="sch-mobile-tray"
-                                     data-unscheduled-tray="true"
-                                     @ondragover:preventDefault
-                                     @ondragover="OnDragOver"
-                                     @ondrop="OnDropToUnscheduledAsync">
-                                    <div class="sch-tray-head">
-                                        <strong class="sch-col-title">Unscheduled</strong>
-                                        <span class="muted-note">Drag into a day</span>
-                                    </div>
-
-                                    <div class="data-list sch-dropzone">
-                                        @if (PendingRequests.Count == 0)
-                                        {
-                                            <p class="muted-note">No unscheduled work orders</p>
-                                        }
-                                        else
-                                        {
-                                            @foreach (var request in PendingRequests)
-                                            {
-                                                @RenderScheduleCard(request)
-                                            }
-                                        }
-                                    </div>
-                                </div>
+                                }
                             </div>
-                        }
-                        else
-                        {
-                            <div class="sch-route">
-                                <div class="sch-route-tray">
-                                    <div class="sch-tray-head">
-                                        <strong class="sch-col-title">@_selectedDay.ToString("ddd M/d") Route</strong>
-                                        <span class="section-tag">@SelectedDayStops.Count</span>
-                                        <span class="muted-note">Use arrows to reorder</span>
-                                    </div>
-
-                                    <div class="data-list">
-                                        @if (SelectedDayStops.Count == 0)
-                                        {
-                                            <p class="muted-note">No route stops for this day.</p>
-                                        }
-                                        else
-                                        {
-                                            @foreach (var stop in SelectedDayStops)
-                                            {
-                                                @RenderScheduleRouteCard(stop)
-                                            }
-                                        }
-                                    </div>
-                                </div>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="sch-route">
+                        <div class="sch-route-tray">
+                            <div class="sch-tray-head">
+                                <strong class="sch-col-title">Group @_selectedGroup Route</strong>
+                                <span class="section-tag">@SelectedGroupStops.Count</span>
+                                <span class="muted-note">Use arrows to reorder</span>
                             </div>
-                        }
-                    </section>
-                </div>
-            </div>
+
+                            <div class="data-list">
+                                @if (SelectedGroupStops.Count == 0)
+                                {
+                                    <p class="muted-note">No route stops in this group.</p>
+                                }
+                                else
+                                {
+                                    @foreach (var request in SelectedGroupStops)
+                                    {
+                                        @RenderRouteCard(request)
+                                    }
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+            </section>
         </div>
     </section>
 }
 
 @code {
-    [Parameter] public DateTime? Date { get; set; }
-
-    private List<WorkOrderSummary> _dragItems = [];
-    private List<WorkOrderSummary> _unscheduled = [];
-    private Dictionary<DateOnly, List<WorkOrderSummary>> _byDay = [];
-    private bool _hasLoaded;
-    private DateOnly _selectedDay = DateOnly.FromDateTime(DateTime.Today);
-    private string _viewMode = "assign";
-    private string _mapFilter = "week";
-    private string? _lastMapRenderKey;
-    private bool _scheduleAssetsReady;
-    private Guid? _dragWorkOrderId;
-    private Guid? _armedWorkOrderId;
-    private DotNetObjectReference<Schedule>? _dotNetRef;
-
     private const double DefaultCenterLat = 36.175052;
     private const double DefaultCenterLng = -115.156251;
+    private static readonly IReadOnlyList<int> RouteGroups = [1, 2, 3, 4, 5];
 
-    private string _selectedDayString => _selectedDay.ToString("yyyy-MM-dd");
+    private readonly List<WorkOrderSummary> _allRequests = [];
+    private readonly List<WorkOrderSummary> _unassigned = [];
+    private readonly Dictionary<int, List<WorkOrderSummary>> _byGroup = [];
+    private DotNetObjectReference<Schedule>? _dotNetRef;
+    private bool _hasLoaded;
+    private bool _scheduleAssetsReady;
+    private string _viewMode = "assign";
+    private int _selectedGroup = 1;
+    private Guid? _dragWorkOrderId;
+    private Guid? _armedWorkOrderId;
+    private string? _lastMapRenderKey;
+    private bool _preserveMapViewOnce;
 
-    private IReadOnlyList<WorkOrderSummary> PendingRequests => _unscheduled;
-
-    private IReadOnlyList<WorkOrderSummary> SelectedDayStops =>
-        GetDayList(_selectedDay)
+    private IReadOnlyList<WorkOrderSummary> UnassignedRequests => _unassigned;
+    private IReadOnlyList<WorkOrderSummary> SelectedGroupStops =>
+        _allRequests.Where(x => x.RouteGroup == _selectedGroup)
             .OrderBy(x => x.ScheduledOrder ?? int.MaxValue)
+            .ThenBy(x => x.City)
             .ThenBy(x => StreetOnly(x))
             .ToList();
+    private bool IsArmed => _armedWorkOrderId.HasValue;
 
-    private IReadOnlyList<DateOnly> WeekDays
-    {
-        get
-        {
-            var baseDay = _selectedDay.ToDateTime(TimeOnly.MinValue);
-            var mondayOffset = baseDay.DayOfWeek == DayOfWeek.Sunday ? -6 : 1 - (int)baseDay.DayOfWeek;
-            var monday = _selectedDay.AddDays(mondayOffset);
-            return Enumerable.Range(0, 5).Select(x => monday.AddDays(x)).ToList();
-        }
-    }
-
-    protected override async Task OnInitializedAsync()
-    {
-        _selectedDay = Date.HasValue ? DateOnly.FromDateTime(Date.Value) : DateOnly.FromDateTime(DateTime.Today);
-        await LoadWorkOrdersAsync();
-    }
-
-    protected override async Task OnParametersSetAsync()
-    {
-        if (Date.HasValue)
-        {
-            _selectedDay = DateOnly.FromDateTime(Date.Value);
-            _lastMapRenderKey = null;
-        }
-
-        await Task.CompletedTask;
-    }
+    protected override async Task OnInitializedAsync() => await LoadWorkOrdersAsync();
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         await EnsureScheduleAssetsAsync();
-
-        if (firstRender)
-        {
-            _dotNetRef ??= DotNetObjectReference.Create(this);
-            await JS.InvokeVoidAsync("cbScheduleMap.setDotNetRef", _dotNetRef);
-        }
-
+        _dotNetRef ??= DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("cbScheduleMap.setDotNetRef", _dotNetRef);
         await RenderMapAsync();
-
-        if (firstRender)
-        {
-            await Task.Delay(150);
-            _lastMapRenderKey = null;
-            await RenderMapAsync();
-        }
     }
 
-    private IReadOnlyList<WorkOrderSummary> WorkForDay(DateOnly day) => GetDayList(day);
+    public void Dispose() => _dotNetRef?.Dispose();
 
-    private bool IsArmed => _armedWorkOrderId.HasValue;
+    private IReadOnlyList<WorkOrderSummary> WorkForGroup(int group) =>
+        _byGroup.TryGetValue(group, out var list)
+            ? list.OrderBy(x => x.ScheduledOrder ?? int.MaxValue).ThenBy(x => x.City).ThenBy(x => StreetOnly(x)).ToList()
+            : [];
 
-    private void PrevWeek()
+    private async Task LoadWorkOrdersAsync()
     {
-        _selectedDay = _selectedDay.AddDays(-7);
+        var requests = (await FieldData.GetWorkOrdersAsync())
+            .Where(IsRoutePlanningStatus)
+            .ToList();
+
+        _allRequests.Clear();
+        _allRequests.AddRange(requests);
+
+        _unassigned.Clear();
+        _unassigned.AddRange(requests.Where(x => x.RouteGroup is null).OrderBy(x => x.City).ThenBy(x => StreetOnly(x)));
+
+        _byGroup.Clear();
+        foreach (var group in RouteGroups)
+        {
+            _byGroup[group] = requests.Where(x => x.RouteGroup == group)
+                .OrderBy(x => x.ScheduledOrder ?? int.MaxValue)
+                .ThenBy(x => x.City)
+                .ThenBy(x => StreetOnly(x))
+                .ToList();
+        }
+
+        EnsureSelectedGroupIsPopulated();
+        _hasLoaded = true;
         _lastMapRenderKey = null;
     }
 
-    private void NextWeek()
+    private void SelectGroup(int group)
     {
-        _selectedDay = _selectedDay.AddDays(7);
-        _lastMapRenderKey = null;
-    }
-
-    private void OnSelectedDateChanged(ChangeEventArgs args)
-    {
-        if (DateOnly.TryParse(args.Value?.ToString(), out var parsed))
-        {
-            _selectedDay = parsed;
-            _lastMapRenderKey = null;
-        }
-    }
-
-    private void SelectDay(DateOnly day)
-    {
-        _selectedDay = day;
-        _mapFilter = _viewMode == "route" ? "selected" : "week";
+        _selectedGroup = group;
         _lastMapRenderKey = null;
     }
 
     private void SetAssignMode()
     {
         _viewMode = "assign";
-        _mapFilter = "week";
         _lastMapRenderKey = null;
     }
 
     private void SetRouteMode()
     {
         _viewMode = "route";
-        _mapFilter = "selected";
+        EnsureSelectedGroupIsPopulated();
         _lastMapRenderKey = null;
     }
 
-    private void BeginDrag(Guid workOrderId)
+    private void EnsureSelectedGroupIsPopulated()
     {
-        _dragWorkOrderId = workOrderId;
-        _armedWorkOrderId = workOrderId;
-    }
-
-    private void ArmWorkOrder(Guid workOrderId)
-    {
-        _armedWorkOrderId = workOrderId;
-    }
-
-    private void OnDragOver(DragEventArgs _)
-    {
-    }
-
-    private async Task OnDropToDayAsync(DateOnly day)
-    {
-        var workOrderId = _dragWorkOrderId ?? _armedWorkOrderId;
-        if (!workOrderId.HasValue)
+        if (SelectedGroupStops.Count > 0 || _allRequests.All(x => x.RouteGroup is null))
         {
             return;
         }
 
-        ApplyLocalScheduleUpdate(workOrderId.Value, day);
-        await InvokeAsync(StateHasChanged);
-        await FieldData.UpdateWorkOrderScheduleAsync(workOrderId.Value, day);
+        var firstPopulatedGroup = RouteGroups.FirstOrDefault(group => _allRequests.Any(x => x.RouteGroup == group));
+        if (firstPopulatedGroup != 0)
+        {
+            _selectedGroup = firstPopulatedGroup;
+        }
+    }
+
+    private void BeginDrag(Guid id)
+    {
+        _dragWorkOrderId = id;
+        _armedWorkOrderId = id;
+    }
+
+    private void Arm(Guid id) => _armedWorkOrderId = id;
+
+    private async Task OnDropToGroupAsync(int group)
+    {
+        var id = _dragWorkOrderId ?? _armedWorkOrderId;
+        if (!id.HasValue) return;
+
+        _preserveMapViewOnce = true;
+        ApplyLocalRouteGroupUpdate(id.Value, group);
+        await FieldData.UpdateWorkOrderRouteGroupAsync(id.Value, group);
         await LoadWorkOrdersAsync();
         _dragWorkOrderId = null;
         _armedWorkOrderId = null;
     }
 
-    private Task AssignArmedToDayAsync(DateOnly day)
-        => _armedWorkOrderId.HasValue ? OnDropToDayAsync(day) : Task.CompletedTask;
+    private Task AssignArmedToGroupAsync(int group) =>
+        _armedWorkOrderId.HasValue ? OnDropToGroupAsync(group) : Task.CompletedTask;
 
-    private async Task OnDropToUnscheduledAsync()
+    private async Task OnDropToUnassignedAsync()
     {
-        var workOrderId = _dragWorkOrderId ?? _armedWorkOrderId;
-        if (!workOrderId.HasValue)
-        {
-            return;
-        }
+        var id = _dragWorkOrderId ?? _armedWorkOrderId;
+        if (!id.HasValue) return;
 
-        ApplyLocalScheduleUpdate(workOrderId.Value, null);
-        await InvokeAsync(StateHasChanged);
-        await FieldData.UpdateWorkOrderScheduleAsync(workOrderId.Value, null);
+        _preserveMapViewOnce = true;
+        ApplyLocalRouteGroupUpdate(id.Value, null);
+        await FieldData.UpdateWorkOrderRouteGroupAsync(id.Value, null);
         await LoadWorkOrdersAsync();
         _dragWorkOrderId = null;
         _armedWorkOrderId = null;
     }
 
-    private async Task MoveRouteStopAsync(Guid workOrderId, int direction)
+    private async Task MoveRouteStopAsync(Guid id, int direction)
     {
-        if (direction == 0)
-        {
-            return;
-        }
-
-        if (!_byDay.TryGetValue(_selectedDay, out var dayList))
-        {
-            return;
-        }
-
-        var orderedDay = dayList
-            .OrderBy(x => x.ScheduledOrder ?? int.MaxValue)
-            .ThenBy(x => StreetOnly(x))
-            .ToList();
-
-        var currentIndex = orderedDay.FindIndex(x => x.Id == workOrderId);
-        if (currentIndex < 0)
-        {
-            return;
-        }
-
-        var destinationIndex = Math.Clamp(currentIndex + direction, 0, orderedDay.Count - 1);
-        if (destinationIndex == currentIndex)
-        {
-            return;
-        }
-
-        var moving = orderedDay[currentIndex];
-        orderedDay.RemoveAt(currentIndex);
-        orderedDay.Insert(destinationIndex, moving);
-
-        for (var i = 0; i < orderedDay.Count; i++)
-        {
-            orderedDay[i] = CloneWithSchedule(orderedDay[i], orderedDay[i].ScheduledDate, i);
-            ReplaceInDragItems(orderedDay[i]);
-        }
-
-        _byDay[_selectedDay] = orderedDay;
-        _armedWorkOrderId = workOrderId;
-        _lastMapRenderKey = null;
-
-        await InvokeAsync(StateHasChanged);
-        await FieldData.ReorderScheduledWorkOrderAsync(workOrderId, direction);
+        await FieldData.ReorderRouteGroupAsync(id, direction);
         await LoadWorkOrdersAsync();
-        _armedWorkOrderId = workOrderId;
+        _armedWorkOrderId = id;
     }
 
-    private async Task LoadWorkOrdersAsync()
+    private void ApplyLocalRouteGroupUpdate(Guid id, int? routeGroup)
     {
-        var list = (await FieldData.GetWorkOrdersAsync())
-            .Where(IsSchedulableStatus)
-            .ToList();
+        var request = _allRequests.FirstOrDefault(x => x.Id == id);
+        if (request is null) return;
 
-        _unscheduled = list
-            .Where(x => x.ScheduledDate is null)
-            .OrderBy(x => x.City)
-            .ThenBy(x => StreetOnly(x))
-            .ToList();
+        RemoveFromBoard(id);
+        var nextOrder = routeGroup.HasValue
+            ? WorkForGroup(routeGroup.Value).Select(x => x.ScheduledOrder ?? 0).DefaultIfEmpty(-1).Max() + 1
+            : (int?)null;
+        var updated = CloneWithRouteGroup(request, routeGroup, nextOrder);
+        ReplaceMaster(updated);
 
-        _byDay.Clear();
-        foreach (var day in WeekDays)
+        if (routeGroup is null)
         {
-            _byDay[day] = list
-                .Where(x => x.ScheduledDate == day)
-                .OrderBy(x => x.ScheduledOrder ?? int.MaxValue)
-                .ThenBy(x => x.City)
-                .ThenBy(x => StreetOnly(x))
-                .ToList();
-        }
-
-        _dragItems = _unscheduled
-            .Concat(WeekDays.SelectMany(GetDayList))
-            .GroupBy(x => x.Id)
-            .Select(x => x.First())
-            .ToList();
-
-        _hasLoaded = true;
-        _lastMapRenderKey = null;
-    }
-
-    private void ApplyLocalScheduleUpdate(Guid workOrderId, DateOnly? scheduledDate)
-    {
-        var workOrder = _dragItems.FirstOrDefault(x => x.Id == workOrderId);
-        if (workOrder is null)
-        {
-            return;
-        }
-
-        RemoveFromBoard(workOrderId);
-
-        var nextOrder = scheduledDate is null
-            ? (int?)null
-            : GetDayList(scheduledDate.Value)
-                .Select(x => x.ScheduledOrder ?? 0)
-                .DefaultIfEmpty(-1)
-                .Max() + 1;
-
-        var updated = CloneWithSchedule(workOrder, scheduledDate, nextOrder);
-
-        ReplaceInDragItems(updated);
-
-        if (scheduledDate is null)
-        {
-            _unscheduled.Insert(0, updated);
+            _unassigned.Insert(0, updated);
         }
         else
         {
-            if (!_byDay.TryGetValue(scheduledDate.Value, out var dayList))
-            {
-                dayList = [];
-                _byDay[scheduledDate.Value] = dayList;
-            }
-
-            dayList.Add(updated);
-            _byDay[scheduledDate.Value] = dayList
-                .OrderBy(x => x.ScheduledOrder ?? int.MaxValue)
-                .ThenBy(x => x.City)
-                .ThenBy(x => StreetOnly(x))
-                .ToList();
+            _byGroup.TryAdd(routeGroup.Value, []);
+            _byGroup[routeGroup.Value].Add(updated);
         }
 
         _lastMapRenderKey = null;
+    }
+
+    private async Task EnsureScheduleAssetsAsync()
+    {
+        if (_scheduleAssetsReady) return;
+        await JS.InvokeVoidAsync("codeBlue.assets.ensureSchedule");
+        _scheduleAssetsReady = true;
     }
 
     private async Task RenderMapAsync()
     {
         await EnsureScheduleAssetsAsync();
 
-        IEnumerable<WorkOrderSummary> mapSource = _mapFilter switch
-        {
-            "selected" => SelectedDayStops,
-            "unscheduled" => _unscheduled,
-            _ => _dragItems
-        };
-
-        var orderedMapSource = _mapFilter == "selected"
-            ? SelectedDayStops
-            : mapSource.ToList();
-
-        var pins = orderedMapSource
-            .Where(x => x.Latitude is not null && x.Longitude is not null)
-            .Select((stop, index) => new ScheduleMapPin(
-                stop.Id,
-                stop.Latitude,
-                stop.Longitude,
-                stop.Address,
-                ProblemText(stop),
-                stop.ScheduledDate.HasValue ? DayKey(stop.ScheduledDate.Value) : "unscheduled",
-                _mapFilter == "selected" ? index + 1 : null,
-                _mapFilter == "week" && stop.ScheduledDate.HasValue ? DayBadge(stop.ScheduledDate.Value) : null,
-                ProblemText(stop),
-                !stop.ScheduledDate.HasValue,
-                _mapFilter == "selected" && stop.ScheduledDate.HasValue ? DayBadge(_selectedDay) : null))
+        IEnumerable<WorkOrderSummary> source = _viewMode == "route" ? SelectedGroupStops : _allRequests;
+        var pins = source.Where(x => x.Latitude is not null && x.Longitude is not null)
+            .Select((request, index) => new
+            {
+                id = request.Id,
+                lat = request.Latitude,
+                lng = request.Longitude,
+                address = request.Address,
+                label = StreetOnly(request),
+                dayKey = request.RouteGroup.HasValue ? $"group:{request.RouteGroup.Value}" : "unscheduled",
+                seq = _viewMode == "route" ? (int?)(index + 1) : null,
+                badge = _viewMode == "route" ? (index + 1).ToString() : request.RouteGroup?.ToString(),
+                serviceDescription = ProblemText(request),
+                isUnscheduled = !request.RouteGroup.HasValue,
+                routeDayBadge = request.RouteGroup?.ToString()
+            })
             .ToList();
 
-        var mapKey = $"{_viewMode}:{_selectedDay:yyyy-MM-dd}:{string.Join("|", pins.Select(p => $"{p.Id}:{p.Seq}:{p.Badge}:{p.Lat}:{p.Lng}"))}";
-        if (_lastMapRenderKey == mapKey)
-        {
-            return;
-        }
-
+        var mapKey = $"{_viewMode}:{_selectedGroup}:{string.Join("|", pins.Select(p => $"{p.id}:{p.seq}:{p.badge}"))}";
+        if (_lastMapRenderKey == mapKey) return;
         _lastMapRenderKey = mapKey;
 
-        var targetId = await JS.InvokeAsync<bool>("cbScheduleMap.isMobile")
-            ? "cbScheduleMapMobile"
-            : "cbScheduleMapDesktop";
-
-        await JS.InvokeVoidAsync("cbScheduleMap.renderPinsTo", targetId, pins, DefaultCenterLat, DefaultCenterLng);
+        await JS.InvokeVoidAsync("cbScheduleMap.renderPinsTo", "cbScheduleMap", pins, DefaultCenterLat, DefaultCenterLng, new { preserveView = _preserveMapViewOnce });
         await JS.InvokeVoidAsync("cbScheduleMap.invalidate");
-    }
-
-    private async Task EnsureScheduleAssetsAsync()
-    {
-        if (_scheduleAssetsReady)
-        {
-            return;
-        }
-
-        await JS.InvokeVoidAsync("codeBlue.assets.ensureSchedule");
-        _scheduleAssetsReady = true;
-    }
-
-    [JSInvokable]
-    public async Task OnMapPinClicked(string id, bool isUnscheduled)
-    {
-        if (!isUnscheduled || !Guid.TryParse(id, out var workOrderId))
-        {
-            return;
-        }
-
-        var masterIndex = _dragItems.FindIndex(x => x.Id == workOrderId);
-        if (masterIndex > 0)
-        {
-            var selected = _dragItems[masterIndex];
-            _dragItems.RemoveAt(masterIndex);
-            _dragItems.Insert(0, selected);
-        }
-
-        var unscheduledIndex = _unscheduled.FindIndex(x => x.Id == workOrderId);
-        if (unscheduledIndex > 0)
-        {
-            var selected = _unscheduled[unscheduledIndex];
-            _unscheduled.RemoveAt(unscheduledIndex);
-            _unscheduled.Insert(0, selected);
-        }
-
-        _armedWorkOrderId = workOrderId;
-        _dragWorkOrderId = null;
-
-        await InvokeAsync(StateHasChanged);
-
-        await JS.InvokeVoidAsync("ScheduleBoard.scrollToColumn", "unscheduled");
-        await JS.InvokeVoidAsync("ScheduleBoard.scrollToWorkOrderInColumn", "unscheduled", workOrderId.ToString(), new { align = "top" });
-        await JS.InvokeVoidAsync("ScheduleBoard.pulseWorkOrder", workOrderId.ToString());
+        _preserveMapViewOnce = false;
     }
 
     [JSInvokable]
     public async Task OnMapPinRequested(string id)
     {
-        if (!Guid.TryParse(id, out var workOrderId))
+        if (!Guid.TryParse(id, out var requestId)) return;
+        _preserveMapViewOnce = true;
+        await FieldData.UpdateWorkOrderRouteGroupAsync(requestId, null);
+        await LoadWorkOrdersAsync();
+    }
+
+    [JSInvokable]
+    public Task OnMapPinClicked(string id, bool isUnscheduled)
+    {
+        return HandleMapPinClickedAsync(id, isUnscheduled);
+    }
+
+    [JSInvokable]
+    public Task OnMapPinArmed(string id)
+    {
+        if (!Guid.TryParse(id, out var requestId))
+        {
+            return Task.CompletedTask;
+        }
+
+        _armedWorkOrderId = requestId;
+        _dragWorkOrderId = null;
+        return Task.CompletedTask;
+    }
+
+    private async Task HandleMapPinClickedAsync(string id, bool isUnscheduled)
+    {
+        if (!isUnscheduled || !Guid.TryParse(id, out var requestId))
         {
             return;
         }
 
-        ApplyLocalScheduleUpdate(workOrderId, null);
-        await InvokeAsync(StateHasChanged);
-        await FieldData.UpdateWorkOrderScheduleAsync(workOrderId, null);
-        _armedWorkOrderId = workOrderId;
+        _preserveMapViewOnce = true;
+
+        var masterIndex = _allRequests.FindIndex(request => request.Id == requestId);
+        if (masterIndex > 0)
+        {
+            var selected = _allRequests[masterIndex];
+            _allRequests.RemoveAt(masterIndex);
+            _allRequests.Insert(0, selected);
+        }
+
+        var unassignedIndex = _unassigned.FindIndex(request => request.Id == requestId);
+        if (unassignedIndex > 0)
+        {
+            var selected = _unassigned[unassignedIndex];
+            _unassigned.RemoveAt(unassignedIndex);
+            _unassigned.Insert(0, selected);
+        }
+
+        _armedWorkOrderId = requestId;
         _dragWorkOrderId = null;
-        await LoadWorkOrdersAsync();
+
         await InvokeAsync(StateHasChanged);
-        _lastMapRenderKey = null;
+        await JS.InvokeVoidAsync("ScheduleBoard.scrollToColumn", "unscheduled");
+        await JS.InvokeVoidAsync("ScheduleBoard.scrollToWorkOrderInColumn", "unscheduled", requestId.ToString(), new { align = "top" });
+        await JS.InvokeVoidAsync("ScheduleBoard.pulseWorkOrder", requestId.ToString());
     }
 
-    private string SelectedDayClass(DateOnly day) => day == _selectedDay ? "sch-day-selected" : string.Empty;
-
-    private List<WorkOrderSummary> GetDayList(DateOnly day) =>
-        _byDay.TryGetValue(day, out var list) ? list : [];
-
-    private static string DayKey(DateOnly day) => $"day:{day:yyyy-MM-dd}";
-
-    private static string StreetOnly(WorkOrderSummary workOrder) =>
-        !string.IsNullOrWhiteSpace(workOrder.Street1)
-            ? workOrder.Street1
-            : FirstLine(string.IsNullOrWhiteSpace(workOrder.Address) ? workOrder.CustomerName : workOrder.Address);
-
-    private static string ProblemText(WorkOrderSummary workOrder) =>
-        string.IsNullOrWhiteSpace(workOrder.ServiceDetails) ? "No service details recorded." : workOrder.ServiceDetails;
-
-    private static bool IsSchedulableStatus(WorkOrderSummary workOrder) =>
-        workOrder.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase)
-        || workOrder.Status.Equals("New", StringComparison.OrdinalIgnoreCase)
-        || workOrder.Status.Equals("Active", StringComparison.OrdinalIgnoreCase);
-
-    private void RemoveFromBoard(Guid workOrderId)
+    private void RemoveFromBoard(Guid id)
     {
-        _unscheduled.RemoveAll(x => x.Id == workOrderId);
-
-        foreach (var day in WeekDays)
+        _unassigned.RemoveAll(x => x.Id == id);
+        foreach (var group in RouteGroups)
         {
-            if (_byDay.TryGetValue(day, out var list))
+            if (_byGroup.TryGetValue(group, out var list))
             {
-                list.RemoveAll(x => x.Id == workOrderId);
+                list.RemoveAll(x => x.Id == id);
             }
         }
     }
 
-    private void ReplaceInDragItems(WorkOrderSummary updated)
+    private void ReplaceMaster(WorkOrderSummary updated)
     {
-        var existingIndex = _dragItems.FindIndex(x => x.Id == updated.Id);
-        if (existingIndex >= 0)
-        {
-            _dragItems[existingIndex] = updated;
-        }
-        else
-        {
-            _dragItems.Add(updated);
-        }
+        var index = _allRequests.FindIndex(x => x.Id == updated.Id);
+        if (index >= 0) _allRequests[index] = updated;
     }
 
-    private static WorkOrderSummary CloneWithSchedule(WorkOrderSummary existing, DateOnly? scheduledDate, int? scheduledOrder) =>
-        new()
-        {
-            Id = existing.Id,
-            CustomerId = existing.CustomerId,
-            AssignedToUserId = existing.AssignedToUserId,
-            WorkOrderNumber = existing.WorkOrderNumber,
-            CustomerName = existing.CustomerName,
-            Address = existing.Address,
-            Street1 = existing.Street1,
-            City = existing.City,
-            Latitude = existing.Latitude,
-            Longitude = existing.Longitude,
-            Status = existing.Status,
-            Technician = existing.Technician,
-            GateCode = existing.GateCode,
-            AnimalsPresent = existing.AnimalsPresent,
-            ServiceDetails = existing.ServiceDetails,
-            DateSubmitted = existing.DateSubmitted,
-            ScheduledDate = scheduledDate,
-            ScheduledOrder = scheduledOrder,
-            ServiceStartupDate = existing.ServiceStartupDate,
-            ServiceContactName = existing.ServiceContactName,
-            ServiceContactPhone = existing.ServiceContactPhone,
-            BuilderCompanyName = existing.BuilderCompanyName,
-            BuilderContactName = existing.BuilderContactName,
-            BuilderContactPhone = existing.BuilderContactPhone,
-            BuilderEmail = existing.BuilderEmail,
-            CompletedBy = existing.CompletedBy,
-            CompletedOn = existing.CompletedOn,
-            HasPendingUpload = existing.HasPendingUpload
-        };
+    private static WorkOrderSummary CloneWithRouteGroup(WorkOrderSummary request, int? routeGroup, int? order) => new()
+    {
+        Id = request.Id,
+        CustomerId = request.CustomerId,
+        AssignedToUserId = request.AssignedToUserId,
+        WorkOrderNumber = request.WorkOrderNumber,
+        CustomerName = request.CustomerName,
+        Address = request.Address,
+        Street1 = request.Street1,
+        City = request.City,
+        Latitude = request.Latitude,
+        Longitude = request.Longitude,
+        Status = request.Status,
+        Technician = request.Technician,
+        GateCode = request.GateCode,
+        AnimalsPresent = request.AnimalsPresent,
+        ServiceDetails = request.ServiceDetails,
+        DateSubmitted = request.DateSubmitted,
+        RouteGroup = routeGroup,
+        ScheduledDate = request.ScheduledDate,
+        ScheduledOrder = order,
+        ServiceStartupDate = request.ServiceStartupDate,
+        ServiceContactName = request.ServiceContactName,
+        ServiceContactPhone = request.ServiceContactPhone,
+        BuilderCompanyName = request.BuilderCompanyName,
+        BuilderContactName = request.BuilderContactName,
+        BuilderContactPhone = request.BuilderContactPhone,
+        BuilderEmail = request.BuilderEmail,
+        CompletedBy = request.CompletedBy,
+        CompletedOn = request.CompletedOn,
+        HasPendingUpload = request.HasPendingUpload
+    };
 
-    private static string DetailHref(WorkOrderSummary workOrder) =>
-        workOrder.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase)
-        || workOrder.Status.Equals("New", StringComparison.OrdinalIgnoreCase)
-            ? $"/service-requests/{workOrder.Id}"
-            : workOrder.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase)
-                ? $"/work-orders/history/{workOrder.Id}"
-                : $"/work-orders/active/{workOrder.Id}";
+    private static bool IsRoutePlanningStatus(WorkOrderSummary request) =>
+        request.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase)
+        || request.Status.Equals("New", StringComparison.OrdinalIgnoreCase)
+        || request.Status.Equals("Active", StringComparison.OrdinalIgnoreCase);
 
-    private static string DayPillClass(DateOnly day) =>
-        day.DayOfWeek switch
-        {
-            DayOfWeek.Monday => "cb-day-mon",
-            DayOfWeek.Tuesday => "cb-day-tue",
-            DayOfWeek.Wednesday => "cb-day-wed",
-            DayOfWeek.Thursday => "cb-day-thu",
-            DayOfWeek.Friday => "cb-day-fri",
-            _ => string.Empty
-        };
+    private static string GroupPillClass(int group) => group switch
+    {
+        1 => "cb-day-mon",
+        2 => "cb-day-tue",
+        3 => "cb-day-wed",
+        4 => "cb-day-thu",
+        5 => "cb-day-fri",
+        _ => string.Empty
+    };
 
-    private static string DayBadge(DateOnly day) =>
-        day.DayOfWeek switch
-        {
-            DayOfWeek.Monday => "M",
-            DayOfWeek.Tuesday => "T",
-            DayOfWeek.Wednesday => "W",
-            DayOfWeek.Thursday => "Th",
-            DayOfWeek.Friday => "F",
-            _ => string.Empty
-        };
+    private static string StreetOnly(WorkOrderSummary request) =>
+        !string.IsNullOrWhiteSpace(request.Street1) ? request.Street1 : FirstLine(string.IsNullOrWhiteSpace(request.Address) ? request.CustomerName : request.Address);
+
+    private static string ProblemText(WorkOrderSummary request) =>
+        string.IsNullOrWhiteSpace(request.ServiceDetails) ? "No service details recorded." : request.ServiceDetails;
+
+    private static string DetailHref(WorkOrderSummary request) => $"/service-requests/{request.Id}";
 
     private static string FirstLine(string value) =>
-        string.IsNullOrWhiteSpace(value)
-            ? "Unknown Address"
-            : value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? value;
+        string.IsNullOrWhiteSpace(value) ? "Unknown Address" : value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? value;
 
-    private RenderFragment RenderScheduleCard(WorkOrderSummary workOrder) => builder =>
+    private RenderFragment RenderScheduleCard(WorkOrderSummary request) => builder =>
     {
         builder.OpenElement(0, "article");
-        builder.AddAttribute(1, "class", $"sch-item schedule-stop-card {(workOrder.Id == _armedWorkOrderId ? "sch-item-armed" : string.Empty)}");
-        builder.AddAttribute(2, "role", "button");
-        builder.AddAttribute(3, "tabindex", "0");
-        builder.AddAttribute(4, "onclick", EventCallback.Factory.Create(this, () => ArmWorkOrder(workOrder.Id)));
-
-        builder.OpenElement(5, "div");
-        builder.AddAttribute(6, "class", "sch-item-row");
-
-        builder.OpenElement(7, "div");
-        builder.AddAttribute(8, "class", "sch-item-title");
-        builder.OpenElement(9, "span");
-        builder.AddAttribute(10, "class", "sch-item-street");
-        builder.AddContent(11, StreetOnly(workOrder));
-        builder.CloseElement();
-        builder.OpenElement(12, "span");
-        builder.AddAttribute(13, "class", "sch-item-desc");
-        builder.AddContent(14, ProblemText(workOrder));
-        builder.CloseElement();
-        builder.CloseElement();
-
-        builder.OpenElement(15, "a");
-        builder.AddAttribute(16, "class", "icon-action ghost-action sch-item-open");
-        builder.AddAttribute(17, "href", DetailHref(workOrder));
-        builder.AddAttribute(18, "title", "Open work order");
-        builder.AddAttribute(19, "aria-label", "Open work order");
-        builder.AddAttribute(20, "onclick", "event.stopPropagation();");
-        builder.OpenElement(21, "span");
-        builder.AddAttribute(22, "class", "schedule-open-glyph");
-        builder.AddContent(23, "\u2197");
-        builder.CloseElement();
-        builder.CloseElement();
-
-        builder.CloseElement();
+        builder.AddAttribute(1, "id", $"wo-{request.Id}");
+        builder.AddAttribute(2, "class", $"sch-item schedule-stop-card {(request.Id == _armedWorkOrderId ? "sch-item-armed" : string.Empty)}");
+        builder.AddAttribute(3, "role", "button");
+        builder.AddAttribute(4, "tabindex", "0");
+        builder.AddAttribute(5, "draggable", "true");
+        builder.AddAttribute(6, "ondragstart", EventCallback.Factory.Create<DragEventArgs>(this, _ => BeginDrag(request.Id)));
+        builder.AddAttribute(7, "onclick", EventCallback.Factory.Create(this, () => Arm(request.Id)));
+        builder.AddMarkupContent(8, $"<div class=\"sch-item-row\"><div class=\"sch-item-title\"><span class=\"sch-item-street\">{StreetOnly(request)}</span><span class=\"sch-item-desc\">{ProblemText(request)}</span></div><a class=\"icon-action ghost-action sch-item-open\" href=\"{DetailHref(request)}\" title=\"Open service request\" aria-label=\"Open service request\" onclick=\"event.stopPropagation();\"><span class=\"schedule-open-glyph\">↗</span></a></div>");
         builder.CloseElement();
     };
 
-    private RenderFragment RenderScheduleRouteCard(WorkOrderSummary workOrder) => builder =>
+    private RenderFragment RenderRouteCard(WorkOrderSummary request) => builder =>
     {
-        var order = SelectedDayStops.ToList().FindIndex(x => x.Id == workOrder.Id);
+        var order = SelectedGroupStops.ToList().FindIndex(x => x.Id == request.Id);
         var isFirst = order <= 0;
-        var isLast = order == SelectedDayStops.Count - 1;
-
+        var isLast = order == SelectedGroupStops.Count - 1;
         builder.OpenElement(0, "article");
-        builder.AddAttribute(1, "class", $"sch-item schedule-stop-card sch-route-card {(workOrder.Id == _armedWorkOrderId ? "sch-item-armed" : string.Empty)}");
-        builder.AddAttribute(2, "role", "button");
-        builder.AddAttribute(3, "tabindex", "0");
-        builder.AddAttribute(4, "onclick", EventCallback.Factory.Create(this, () => ArmWorkOrder(workOrder.Id)));
+        builder.AddAttribute(1, "class", $"sch-item schedule-stop-card sch-route-card {(request.Id == _armedWorkOrderId ? "sch-item-armed" : string.Empty)}");
+        builder.OpenElement(2, "div");
+        builder.AddAttribute(3, "class", "sch-route-card-main");
 
-        builder.OpenElement(5, "div");
-        builder.AddAttribute(6, "class", "sch-route-card-main");
+        builder.OpenElement(4, "div");
+        builder.AddAttribute(5, "class", "sch-route-order");
+        builder.AddContent(6, order + 1);
+        builder.CloseElement();
 
         builder.OpenElement(7, "div");
-        builder.AddAttribute(8, "class", "sch-route-order");
-        builder.AddContent(9, order + 1);
+        builder.AddAttribute(8, "class", "sch-route-copy");
+        builder.OpenElement(9, "span");
+        builder.AddAttribute(10, "class", "sch-item-street sch-route-street");
+        builder.AddContent(11, StreetOnly(request));
         builder.CloseElement();
-
-        builder.OpenElement(10, "div");
-        builder.AddAttribute(11, "class", "sch-route-copy");
         builder.OpenElement(12, "span");
-        builder.AddAttribute(13, "class", "sch-item-street");
-        builder.AddContent(14, StreetOnly(workOrder));
-        builder.CloseElement();
-        builder.OpenElement(15, "span");
-        builder.AddAttribute(16, "class", "sch-item-desc");
-        builder.AddContent(17, ProblemText(workOrder));
+        builder.AddAttribute(13, "class", "sch-item-desc sch-route-desc");
+        builder.AddContent(14, ProblemText(request));
         builder.CloseElement();
         builder.CloseElement();
 
-        builder.OpenElement(18, "div");
-        builder.AddAttribute(19, "class", "sch-route-actions");
+        builder.OpenElement(15, "div");
+        builder.AddAttribute(16, "class", "sch-route-actions");
+        builder.AddAttribute(17, "style", "flex:0 0 1.6rem;width:1.6rem;display:flex;flex-direction:column;align-self:stretch;justify-content:stretch;background:transparent;");
 
-        builder.OpenElement(20, "button");
-        builder.AddAttribute(21, "class", "icon-action ghost-action sch-route-shift");
-        builder.AddAttribute(22, "type", "button");
-        builder.AddAttribute(23, "disabled", isFirst);
-        builder.AddAttribute(24, "title", "Move up");
-        builder.AddAttribute(25, "aria-label", "Move up");
-        builder.AddEventStopPropagationAttribute(26, "onclick", true);
-        builder.AddAttribute(27, "onclick", EventCallback.Factory.Create(this, () => MoveRouteStopAsync(workOrder.Id, -1)));
-        builder.AddContent(27, "\u2191");
+        builder.OpenElement(18, "button");
+        builder.AddAttribute(19, "class", "sch-route-shift sch-route-shift-up");
+        builder.AddAttribute(20, "type", "button");
+        builder.AddAttribute(21, "disabled", isFirst);
+        builder.AddAttribute(22, "onclick", EventCallback.Factory.Create(this, () => MoveRouteStopAsync(request.Id, -1)));
+        builder.AddAttribute(23, "style", $"flex:1 1 50%;width:100%;height:100%;display:flex;align-items:center;justify-content:center;padding:0;margin:0;border:0;background:transparent;box-shadow:none;outline:none;color:{(isFirst ? "rgba(25,44,70,0.24)" : "rgba(25,44,70,0.9)")};cursor:{(isFirst ? "default" : "pointer")};");
+        builder.AddMarkupContent(24, "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\" style=\"width:1.05rem;height:1.05rem;fill:currentColor;display:block;\"><path d=\"M7.41 14.59L12 10l4.59 4.59L18 13.17l-6-6-6 6z\"></path></svg>");
         builder.CloseElement();
 
-        builder.OpenElement(28, "button");
-        builder.AddAttribute(29, "class", "icon-action ghost-action sch-route-shift");
-        builder.AddAttribute(30, "type", "button");
-        builder.AddAttribute(31, "disabled", isLast);
-        builder.AddAttribute(32, "title", "Move down");
-        builder.AddAttribute(33, "aria-label", "Move down");
-        builder.AddEventStopPropagationAttribute(34, "onclick", true);
-        builder.AddAttribute(35, "onclick", EventCallback.Factory.Create(this, () => MoveRouteStopAsync(workOrder.Id, 1)));
-        builder.AddContent(35, "\u2193");
-        builder.CloseElement();
-
-        builder.OpenElement(36, "a");
-        builder.AddAttribute(37, "class", "icon-action ghost-action sch-item-open");
-        builder.AddAttribute(38, "href", DetailHref(workOrder));
-        builder.AddAttribute(39, "title", "Open work order");
-        builder.AddAttribute(40, "aria-label", "Open work order");
-        builder.AddAttribute(41, "onclick", "event.stopPropagation();");
-        builder.OpenElement(42, "span");
-        builder.AddAttribute(43, "class", "schedule-open-glyph");
-        builder.AddContent(44, "\u2197");
-        builder.CloseElement();
+        builder.OpenElement(25, "button");
+        builder.AddAttribute(26, "class", "sch-route-shift sch-route-shift-down");
+        builder.AddAttribute(27, "type", "button");
+        builder.AddAttribute(28, "disabled", isLast);
+        builder.AddAttribute(29, "onclick", EventCallback.Factory.Create(this, () => MoveRouteStopAsync(request.Id, 1)));
+        builder.AddAttribute(30, "style", $"flex:1 1 50%;width:100%;height:100%;display:flex;align-items:center;justify-content:center;padding:0;margin:0;border:0;background:transparent;box-shadow:none;outline:none;color:{(isLast ? "rgba(25,44,70,0.24)" : "rgba(25,44,70,0.9)")};cursor:{(isLast ? "default" : "pointer")};");
+        builder.AddMarkupContent(31, "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\" style=\"width:1.05rem;height:1.05rem;fill:currentColor;display:block;\"><path d=\"M7.41 8.41L12 13l4.59-4.59L18 9.83l-6 6-6-6z\"></path></svg>");
         builder.CloseElement();
 
         builder.CloseElement();
         builder.CloseElement();
         builder.CloseElement();
     };
-
-    private sealed record ScheduleMapPin(
-        Guid Id,
-        decimal? Lat,
-        decimal? Lng,
-        string Address,
-        string Label,
-        string DayKey,
-        int? Seq,
-        string? Badge,
-        string? ServiceDescription,
-        bool IsUnscheduled,
-        string? RouteDayBadge);
-
-    public void Dispose()
-    {
-        _dotNetRef?.Dispose();
-    }
 }

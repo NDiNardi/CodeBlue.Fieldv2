@@ -68,7 +68,7 @@ public sealed class FieldSyncService(IFieldSyncClient syncClient, IFieldDataServ
         return new SyncResult
         {
             Success = true,
-            Message = $"Synced with server: pushed {pushResult.CreatedClaimCount} claim(s), {pushResult.ScheduledWorkOrderCount} scheduled service request(s), and {pushResult.CompletedWorkOrderCount} work order update(s), then refreshed local cache.",
+            Message = $"Synced with server: pushed {pushResult.CreatedClaimCount} claim(s), {pushResult.ScheduledWorkOrderCount} scheduled service request(s), and {pushResult.CompletedWorkOrderCount} completed service request update(s), then refreshed local cache.",
             AttemptedAtUtc = pushResult.ProcessedAtUtc,
             SyncKind = snapshot.IsDelta ? "Push + delta sync" : "Push + full sync",
             CustomerCount = snapshot.Customers.Count,

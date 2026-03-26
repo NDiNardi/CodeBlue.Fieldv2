@@ -463,6 +463,10 @@ h1:focus {
     width: 1rem;
     height: 1rem;
     color: var(--cb-accent-deep);
+    background: transparent;
+    border: 0;
+    padding: 0;
+    margin: 0;
 }
 
 .dashboard-stop-map-icon,
@@ -600,6 +604,20 @@ h1:focus {
     cursor: pointer;
 }
 
+.claim-toggle.claim-toggle-quick-action {
+    border-color: transparent;
+    background: linear-gradient(135deg, #009ffd 0%, #007acc 100%);
+    color: #fff;
+    box-shadow: 0 4px 10px rgba(0, 159, 253, 0.28);
+}
+
+.claim-toggle.claim-toggle-quick-action:hover,
+.claim-toggle.claim-toggle-quick-action:focus-visible {
+    border-color: transparent;
+    background: linear-gradient(135deg, #009ffd 0%, #007acc 100%);
+    color: #fff;
+}
+
 .secondary-button,
 .day-nav-button,
 .day-nav-today {
@@ -636,9 +654,15 @@ h1:focus {
     margin-bottom: 0.7rem;
 }
 
-.claim-toggle-row .claim-toggle {
+.claim-toggle-row .claim-toggle:not(.claim-toggle-quick-action) {
     flex: 1 1 0;
     width: 100%;
+}
+
+.claim-toggle-row .claim-toggle-quick-action {
+    flex: 0 0 auto;
+    width: auto;
+    margin-left: 1.75rem;
 }
 
 .claim-toggle.active {
@@ -905,6 +929,86 @@ h1:focus {
     box-shadow: var(--cb-shadow);
 }
 
+.dashboard-swipe-shell {
+    position: relative;
+    overflow: hidden;
+    border-radius: var(--cb-radius);
+}
+
+.dashboard-swipe-actions {
+    position: absolute;
+    inset: 0 0 0 auto;
+    width: 5.5rem;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    background: linear-gradient(180deg, rgba(232, 239, 247, 0.98), rgba(220, 230, 241, 0.98));
+    border: 1px solid rgba(174, 192, 213, 0.9);
+    border-radius: var(--cb-radius);
+    overflow: hidden;
+}
+
+.dashboard-swipe-action-button {
+    appearance: none;
+    -webkit-appearance: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-left: 1px solid rgba(174, 192, 213, 0.75);
+    border-top: 1px solid rgba(174, 192, 213, 0.75);
+    background: transparent;
+    color: var(--cb-accent-deep);
+    padding: 0;
+    margin: 0;
+}
+
+.dashboard-swipe-action-button:nth-child(1),
+.dashboard-swipe-action-button:nth-child(2) {
+    border-top: 0;
+}
+
+.dashboard-swipe-action-button:nth-child(odd) {
+    border-left: 0;
+}
+
+.dashboard-swipe-action-button svg {
+    width: 1rem;
+    height: 1rem;
+    fill: currentColor;
+}
+
+.dashboard-stop-card-swipeable {
+    position: relative;
+    z-index: 1;
+    touch-action: pan-y;
+    will-change: transform;
+}
+
+.dashboard-call-sheet {
+    max-width: 30rem;
+}
+
+.dashboard-call-actions {
+    display: grid;
+    gap: 0.55rem;
+}
+
+.field-check-row {
+    display: flex;
+    align-items: start;
+    gap: 0.55rem;
+    color: var(--cb-text-soft);
+}
+
+.sheet-nav-section-label {
+    margin: 0.2rem 0 0.15rem;
+    color: var(--cb-accent-deep);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
 .dashboard-list-heading {
     margin-bottom: 0.3rem;
 }
@@ -1153,6 +1257,22 @@ h1:focus {
     color: var(--cb-ink);
     font-size: 0.84rem;
     line-height: 1.3;
+}
+
+.leaflet-control-attribution {
+    padding: 0 2px !important;
+    margin: 0 2px 2px 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    border: 0 !important;
+    font-size: 0.52rem !important;
+    line-height: 1 !important;
+    opacity: 0.18;
+}
+
+.leaflet-control-attribution a {
+    color: rgba(26, 46, 74, 0.42) !important;
+    text-decoration: none !important;
 }
 
 .menu-backdrop {
@@ -1496,13 +1616,18 @@ h1:focus {
 .sch-map-card {
     padding-top: 0.2rem;
     padding-bottom: 0.2rem;
+    padding-left: 0.2rem;
+    padding-right: 0.2rem;
 }
 
 .sch-map {
     min-height: 320px;
     border-radius: 5px;
     overflow: hidden;
-    margin: 0 12px 12px 12px;
+    width: calc(100% - 8px);
+    max-width: calc(100% - 8px);
+    margin: 0 auto 8px auto;
+    box-sizing: border-box;
 }
 
 .sch-map-header,
@@ -1544,6 +1669,9 @@ h1:focus {
     font-weight: 800;
     padding: 0.05rem 0.28rem;
     box-shadow: var(--cb-shadow-soft);
+    white-space: nowrap;
+    font-size: 0.76rem;
+    line-height: 1;
 }
 
 .sch-daypill.is-active {
@@ -1592,8 +1720,9 @@ h1:focus {
 .sch-route-daystrip .sch-daypill,
 .sch-col-head .sch-daypill {
     width: auto;
-    min-height: 32px;
-    padding: 0.2rem 0.55rem;
+    min-height: 28px;
+    padding: 0.16rem 0.46rem;
+    font-size: 0.7rem;
 }
 
 .sch-board-desktop {
@@ -1616,6 +1745,7 @@ h1:focus {
     display: flex;
     gap: 0.45rem;
     flex-wrap: wrap;
+    justify-content: center;
     margin-bottom: 0.7rem;
 }
 
@@ -1704,9 +1834,9 @@ h1:focus {
 
 .sch-route-card-main {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    gap: 0.6rem;
-    align-items: start;
+    grid-template-columns: auto minmax(0, 1fr) 2.4rem;
+    gap: 0.45rem;
+    align-items: stretch;
 }
 
 .sch-route-order {
@@ -1725,27 +1855,107 @@ h1:focus {
 
 .sch-route-copy {
     display: grid;
-    gap: 0.15rem;
+    gap: 0.1rem;
     min-width: 0;
+    align-content: center;
 }
 
 .sch-route-actions {
-    display: grid;
-    gap: 0.35rem;
-    justify-items: end;
+    display: flex;
+    flex-direction: column;
+    align-self: stretch;
+    justify-content: stretch;
+    background: transparent;
 }
 
 .sch-route-shift {
-    width: 2rem;
-    height: 2rem;
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
     padding: 0;
-    font-size: 0.98rem;
-    font-weight: 800;
+    margin: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    color: var(--cb-ink);
+    outline: none;
+    cursor: pointer;
+}
+
+.sch-route-shift-up {
+    border-radius: 0;
+}
+
+.sch-route-shift-down {
+    border-radius: 0;
+}
+
+.sch-route-card {
+    display: block;
+    padding: 0.45rem 0.45rem 0.45rem 0.55rem;
+}
+
+.sch-route-street,
+.sch-route-desc {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+}
+
+.sch-route-street {
+    -webkit-line-clamp: 1;
+    line-clamp: 1;
+}
+
+.sch-route-desc {
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    line-height: 1.15;
+}
+
+.sch-route-card .sch-route-card-main {
+    min-height: 3.55rem;
+}
+
+.sch-route-card .sch-route-actions {
+    width: 2rem;
+    min-width: 2rem;
+    height: 100%;
+}
+
+.sch-route-card .sch-route-shift {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1 1 50%;
+}
+
+.sch-route-card .sch-route-shift:disabled {
+    color: rgba(25, 44, 70, 0.24);
+    opacity: 1;
+    cursor: default;
+}
+
+.sch-route-shift-icon {
+    width: 1.15rem;
+    height: 1.15rem;
+    fill: currentColor;
+    display: block;
 }
 
 .sch-mobile-tray,
 .sch-route-tray {
     padding-top: 0.2rem;
+}
+
+.sch-route-tray .data-list {
+    gap: 5px;
+}
+
+.sch-route-tray .schedule-stop-card {
+    margin: 0;
 }
 
 .sch-day-selected {
@@ -2260,6 +2470,12 @@ h1:focus {
     display: flex;
     align-items: center;
     justify-content: center;
+}
+
+.sch-mobile-daybar .sch-daypill,
+.sch-mini-date,
+.sch-mini-count {
+    font-size: 0.7rem;
 }
 
 .claim-detail-upload-thumb {
@@ -2887,6 +3103,15 @@ h1:focus {
     font-size: 0.98rem;
     font-weight: 700;
     box-shadow: 0 4px 10px rgba(12, 28, 45, 0.18);
+}
+
+.field-work-order-actions {
+    display: grid;
+    gap: 0.7rem;
+}
+
+.field-delete-work-order {
+    background: linear-gradient(135deg, #b93131 0%, #8f2020 100%);
 }
 
 @keyframes cb-menu-backdrop-in {

@@ -13,6 +13,7 @@ public sealed class LocalFieldDataService(IBrowserStorageService storage) : IFie
     private const string ClaimsKey = "codeblue.field.claims";
     private const string PendingChangesKey = "codeblue.field.pendingChanges";
     private const string OutboundSyncKey = "codeblue.field.outboundSync";
+    private const string DeletedWorkOrderIdsKey = "codeblue.field.deletedWorkOrderIds";
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -30,7 +31,11 @@ public sealed class LocalFieldDataService(IBrowserStorageService storage) : IFie
     public async Task<IReadOnlyList<WorkOrderSummary>> GetWorkOrdersAsync(CancellationToken cancellationToken = default)
     {
         await EnsureSeededAsync();
-        return await GetRequiredAsync<IReadOnlyList<WorkOrderSummary>>(WorkOrdersKey, static () => Array.Empty<WorkOrderSummary>());
+        var deletedIds = await GetDeletedWorkOrderIdsAsync();
+        var workOrders = await GetRequiredAsync<IReadOnlyList<WorkOrderSummary>>(WorkOrdersKey, static () => Array.Empty<WorkOrderSummary>());
+        return deletedIds.Count == 0
+            ? workOrders
+            : workOrders.Where(workOrder => !deletedIds.Contains(workOrder.Id)).ToList();
     }
 
     public async Task<IReadOnlyList<FieldTechnicianOption>> GetTechniciansAsync(CancellationToken cancellationToken = default)
@@ -45,10 +50,47 @@ public sealed class LocalFieldDataService(IBrowserStorageService storage) : IFie
         return await GetRequiredAsync<IReadOnlyList<CustomerSummary>>(CustomersKey, static () => Array.Empty<CustomerSummary>());
     }
 
+    public async Task<IReadOnlyList<BuilderCompanyOption>> GetBuilderCompaniesAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureSeededAsync();
+
+        var customers = await GetCustomersAsync(cancellationToken);
+        var workOrders = await GetWorkOrdersAsync(cancellationToken);
+
+        var options = workOrders
+            .Select(workOrder => new BuilderCompanyOption
+            {
+                CompanyName = workOrder.BuilderCompanyName,
+                ContactName = workOrder.BuilderContactName,
+                ContactPhone = workOrder.BuilderContactPhone,
+                ContactEmail = workOrder.BuilderEmail
+            })
+            .Concat(customers.Select(customer => new BuilderCompanyOption
+            {
+                CompanyName = customer.OriginalInstallerDealer
+            }))
+            .Where(option => !string.IsNullOrWhiteSpace(option.CompanyName))
+            .GroupBy(option => BuilderCompanyUtil.NormalizeKey(option.CompanyName))
+            .Where(group => !string.IsNullOrWhiteSpace(group.Key))
+            .Select(group => group
+                .OrderByDescending(option => !string.IsNullOrWhiteSpace(option.ContactName))
+                .ThenByDescending(option => !string.IsNullOrWhiteSpace(option.ContactPhone))
+                .ThenBy(option => option.CompanyName)
+                .First())
+            .OrderBy(option => option.CompanyName)
+            .ToList();
+
+        return options;
+    }
+
     public async Task<IReadOnlyList<ClaimSummary>> GetClaimsAsync(CancellationToken cancellationToken = default)
     {
         await EnsureSeededAsync();
-        return await GetRequiredAsync<IReadOnlyList<ClaimSummary>>(ClaimsKey, static () => Array.Empty<ClaimSummary>());
+        var deletedIds = await GetDeletedWorkOrderIdsAsync();
+        var claims = await GetRequiredAsync<IReadOnlyList<ClaimSummary>>(ClaimsKey, static () => Array.Empty<ClaimSummary>());
+        return deletedIds.Count == 0
+            ? claims
+            : claims.Where(claim => claim.WorkOrderId is not Guid workOrderId || !deletedIds.Contains(workOrderId)).ToList();
     }
 
     public async Task<IReadOnlyList<PendingChange>> GetPendingChangesAsync(CancellationToken cancellationToken = default)
@@ -73,8 +115,13 @@ public sealed class LocalFieldDataService(IBrowserStorageService storage) : IFie
             return;
         }
 
-        var localClaims = await GetClaimsAsync(cancellationToken);
-        var localWorkOrders = await GetWorkOrdersAsync(cancellationToken);
+        var deletedWorkOrderIds = await GetDeletedWorkOrderIdsAsync();
+        var localClaims = (await GetRequiredAsync<IReadOnlyList<ClaimSummary>>(ClaimsKey, static () => Array.Empty<ClaimSummary>()))
+            .Where(claim => claim.WorkOrderId is not Guid workOrderId || !deletedWorkOrderIds.Contains(workOrderId))
+            .ToList();
+        var localWorkOrders = (await GetRequiredAsync<IReadOnlyList<WorkOrderSummary>>(WorkOrdersKey, static () => Array.Empty<WorkOrderSummary>()))
+            .Where(workOrder => !deletedWorkOrderIds.Contains(workOrder.Id))
+            .ToList();
         var pendingChanges = await GetPendingChangesAsync(cancellationToken);
         var outboundState = await GetOutboundSyncStateAsync(cancellationToken);
         var pendingClaims = localClaims
@@ -116,12 +163,29 @@ public sealed class LocalFieldDataService(IBrowserStorageService storage) : IFie
             }
         }
 
-        var mergedClaims = snapshot.Claims.Concat(pendingClaims).ToList();
+        var mergedClaims = snapshot.Claims
+            .Where(claim => claim.WorkOrderId is not Guid workOrderId || !deletedWorkOrderIds.Contains(workOrderId))
+            .Concat(pendingClaims)
+            .ToList();
         var mergedWorkOrders = snapshot.WorkOrders
+            .Where(serverWorkOrder => !deletedWorkOrderIds.Contains(serverWorkOrder.Id))
             .Select(serverWorkOrder =>
             {
                 var pendingLocal = pendingWorkOrders.FirstOrDefault(w => w.Id == serverWorkOrder.Id);
-                return pendingLocal ?? serverWorkOrder;
+                if (pendingLocal is not null)
+                {
+                    return pendingLocal;
+                }
+
+                var localWorkOrder = localWorkOrders.FirstOrDefault(w => w.Id == serverWorkOrder.Id);
+                return localWorkOrder is null
+                    ? serverWorkOrder
+                    : CloneWorkOrder(
+                        serverWorkOrder,
+                        routeGroup: localWorkOrder.RouteGroup,
+                        useRouteGroup: true,
+                        scheduledOrder: localWorkOrder.RouteGroup.HasValue ? localWorkOrder.ScheduledOrder : serverWorkOrder.ScheduledOrder,
+                        useScheduledOrder: localWorkOrder.RouteGroup.HasValue);
             })
             .Concat(pendingWorkOrders.Where(localWorkOrder => snapshot.WorkOrders.All(serverWorkOrder => serverWorkOrder.Id != localWorkOrder.Id)))
             .ToList();
@@ -145,16 +209,19 @@ public sealed class LocalFieldDataService(IBrowserStorageService storage) : IFie
         var deletedCustomerIds = snapshot.DeletedCustomerIds.ToHashSet();
         var deletedWorkOrderIds = snapshot.DeletedWorkOrderIds.ToHashSet();
         var deletedClaimIds = snapshot.DeletedClaimIds.ToHashSet();
+        var tombstonedWorkOrderIds = await GetDeletedWorkOrderIdsAsync();
 
-        var localCustomers = (await GetCustomersAsync(cancellationToken))
+        var localCustomers = (await GetRequiredAsync<IReadOnlyList<CustomerSummary>>(CustomersKey, static () => Array.Empty<CustomerSummary>()))
             .Where(customer => !deletedCustomerIds.Contains(customer.Id))
             .ToList();
-        var localTechnicians = (await GetTechniciansAsync(cancellationToken)).ToList();
-        var localClaims = (await GetClaimsAsync(cancellationToken))
+        var localTechnicians = (await GetRequiredAsync<IReadOnlyList<FieldTechnicianOption>>(TechniciansKey, static () => Array.Empty<FieldTechnicianOption>())).ToList();
+        var localClaims = (await GetRequiredAsync<IReadOnlyList<ClaimSummary>>(ClaimsKey, static () => Array.Empty<ClaimSummary>()))
             .Where(claim => !deletedClaimIds.Contains(claim.Id))
+            .Where(claim => claim.WorkOrderId is not Guid workOrderId || !tombstonedWorkOrderIds.Contains(workOrderId))
             .ToList();
-        var localWorkOrders = (await GetWorkOrdersAsync(cancellationToken))
+        var localWorkOrders = (await GetRequiredAsync<IReadOnlyList<WorkOrderSummary>>(WorkOrdersKey, static () => Array.Empty<WorkOrderSummary>()))
             .Where(workOrder => !deletedWorkOrderIds.Contains(workOrder.Id))
+            .Where(workOrder => !tombstonedWorkOrderIds.Contains(workOrder.Id))
             .ToList();
         var pendingChanges = (await GetPendingChangesAsync(cancellationToken))
             .Where(change => !WasDeletedByServer(change, deletedCustomerIds, deletedWorkOrderIds, deletedClaimIds))
@@ -213,17 +280,30 @@ public sealed class LocalFieldDataService(IBrowserStorageService storage) : IFie
 
         var mergedCustomers = MergeById(localCustomers, snapshot.Customers, customer => customer.Id);
         var mergedTechnicians = MergeById(localTechnicians, snapshot.Technicians, tech => tech.Id);
-        var mergedClaims = MergeById(localClaims, snapshot.Claims, claim => claim.Id)
+        var mergedClaims = MergeById(localClaims, snapshot.Claims.Where(claim => claim.WorkOrderId is not Guid workOrderId || !tombstonedWorkOrderIds.Contains(workOrderId)).ToList(), claim => claim.Id)
             .Where(claim => pendingClaims.All(pending => pending.Id != claim.Id))
             .Concat(pendingClaims)
             .ToList();
 
-        var serverMergedWorkOrders = MergeById(localWorkOrders, snapshot.WorkOrders, workOrder => workOrder.Id);
+        var serverMergedWorkOrders = MergeById(localWorkOrders, snapshot.WorkOrders.Where(workOrder => !tombstonedWorkOrderIds.Contains(workOrder.Id)).ToList(), workOrder => workOrder.Id);
         var mergedWorkOrders = serverMergedWorkOrders
             .Select(serverWorkOrder =>
             {
                 var pendingLocal = pendingWorkOrders.FirstOrDefault(w => w.Id == serverWorkOrder.Id);
-                return pendingLocal ?? serverWorkOrder;
+                if (pendingLocal is not null)
+                {
+                    return pendingLocal;
+                }
+
+                var localWorkOrder = localWorkOrders.FirstOrDefault(w => w.Id == serverWorkOrder.Id);
+                return localWorkOrder is null
+                    ? serverWorkOrder
+                    : CloneWorkOrder(
+                        serverWorkOrder,
+                        routeGroup: localWorkOrder.RouteGroup,
+                        useRouteGroup: true,
+                        scheduledOrder: localWorkOrder.RouteGroup.HasValue ? localWorkOrder.ScheduledOrder : serverWorkOrder.ScheduledOrder,
+                        useScheduledOrder: localWorkOrder.RouteGroup.HasValue);
             })
             .Where(workOrder => pendingWorkOrders.All(pending => pending.Id != workOrder.Id) || workOrder.HasPendingUpload)
             .Concat(pendingWorkOrders.Where(localWorkOrder => serverMergedWorkOrders.All(serverWorkOrder => serverWorkOrder.Id != localWorkOrder.Id)))
@@ -349,6 +429,179 @@ public sealed class LocalFieldDataService(IBrowserStorageService storage) : IFie
         });
     }
 
+    public async Task<Guid> QueueQuickClaimAsync(QuickClaimEntryDraft draft, CancellationToken cancellationToken = default)
+    {
+        await EnsureSeededAsync();
+
+        var customers = (await GetCustomersAsync(cancellationToken)).ToList();
+        var street1 = draft.Street1.Trim();
+        var addressKey = AddressKeyUtil.MakeAddressKey(street1);
+        var existingCustomer = customers.FirstOrDefault(customer =>
+            AddressKeyUtil.MakeAddressKey(customer.Street1) == addressKey
+            || AddressKeyUtil.MakeAddressKey(FirstLine(customer.Address)) == addressKey);
+
+        var customerId = existingCustomer?.Id ?? Guid.NewGuid();
+        var address = BuildAddress(draft.Street1, draft.Street2, draft.City, draft.State, draft.Zip);
+
+        if (existingCustomer is null)
+        {
+            customers.Insert(0, new CustomerSummary
+            {
+                Id = customerId,
+                Name = string.IsNullOrWhiteSpace(street1) ? address : street1,
+                Address = address,
+                Street1 = street1,
+                Street2 = draft.Street2?.Trim(),
+                City = draft.City.Trim(),
+                State = draft.State.Trim(),
+                Zip = draft.Zip.Trim(),
+                Phone = draft.ContactPhone.Trim(),
+                ContactName = draft.ContactName.Trim(),
+                ContactEmail = string.Empty,
+                GateCodes = string.Empty,
+                AnimalsPresent = false,
+                OriginalInstallerDealer = draft.OriginalInstallerDealer.Trim(),
+                StartupDate = draft.OriginalInstallationDate,
+                Latitude = draft.Latitude,
+                Longitude = draft.Longitude,
+                OpenWorkOrderCount = 0
+            });
+
+            await SaveAsync(CustomersKey, customers);
+        }
+
+        await QueueNewClaimAsync(new NewClaimDraft
+        {
+            WorkOrderId = null,
+            CustomerId = customerId,
+            WorkOrderNumber = string.Empty,
+            CustomerName = existingCustomer?.Name ?? street1,
+            ServiceAddress = address,
+            ContactName = draft.ContactName.Trim(),
+            ContactPhone = draft.ContactPhone.Trim(),
+            OriginalInstallerDealer = draft.OriginalInstallerDealer.Trim(),
+            OriginalInstallationDate = draft.OriginalInstallationDate,
+            Equipment = draft.Equipment.Trim(),
+            FailureDate = draft.FailureDate,
+            RepairDate = draft.RepairDate,
+            ComponentCode = draft.ComponentCode.Trim(),
+            ModelNumber = draft.ModelNumber.Trim(),
+            IdSerialNumber = draft.IdSerialNumber.Trim(),
+            ComponentSerialNumber = draft.ComponentSerialNumber.Trim(),
+            Notes = draft.Notes.Trim(),
+            CompletedBy = draft.CompletedBy.Trim(),
+            Serial1Photo = draft.Serial1Photo,
+            Serial2Photo = draft.Serial2Photo
+        }, cancellationToken);
+
+        var claims = await GetClaimsAsync(cancellationToken);
+        return claims.First().Id;
+    }
+
+    public async Task<Guid> QueueQuickServiceRequestAsync(QuickServiceRequestDraft draft, CancellationToken cancellationToken = default)
+    {
+        await EnsureSeededAsync();
+
+        var customers = (await GetCustomersAsync(cancellationToken)).ToList();
+        var workOrders = (await GetWorkOrdersAsync(cancellationToken)).ToList();
+        var pendingChanges = (await GetPendingChangesAsync(cancellationToken)).ToList();
+
+        var street1 = draft.Street1.Trim();
+        var city = draft.City.Trim();
+        var state = draft.State.Trim();
+        var zip = draft.Zip.Trim();
+        var addressKey = AddressKeyUtil.MakeAddressKey(street1);
+        var existingCustomer = customers.FirstOrDefault(customer =>
+            AddressKeyUtil.MakeAddressKey(customer.Street1) == addressKey
+            || AddressKeyUtil.MakeAddressKey(FirstLine(customer.Address)) == addressKey);
+
+        var customerId = existingCustomer?.Id ?? Guid.NewGuid();
+        var address = BuildAddress(draft.Street1, draft.Street2, city, state, zip);
+
+        if (existingCustomer is null)
+        {
+            customers.Insert(0, new CustomerSummary
+            {
+                Id = customerId,
+                Name = string.IsNullOrWhiteSpace(street1) ? address : street1,
+                Address = address,
+                Street1 = street1,
+                Street2 = draft.Street2?.Trim(),
+                City = city,
+                State = state,
+                Zip = zip,
+                Phone = draft.ServiceContactPhone.Trim(),
+                ContactName = draft.ServiceContactName.Trim(),
+                ContactEmail = string.Empty,
+                GateCodes = draft.GateCodes.Trim(),
+                AnimalsPresent = draft.AnimalsPresent,
+                OriginalInstallerDealer = draft.BuilderCompanyName.Trim(),
+                StartupDate = draft.StartupDate,
+                Latitude = draft.Latitude,
+                Longitude = draft.Longitude,
+                OpenWorkOrderCount = 1
+            });
+        }
+
+        var requestId = Guid.NewGuid();
+        var requestNumber = $"SR-{requestId.ToString("N")[..6].ToUpperInvariant()}";
+
+        workOrders.Insert(0, new WorkOrderSummary
+        {
+            Id = requestId,
+            CustomerId = customerId,
+            WorkOrderNumber = requestNumber,
+            CustomerName = existingCustomer?.Name ?? street1,
+            Address = address,
+            Street1 = street1,
+            City = city,
+            Latitude = draft.Latitude,
+            Longitude = draft.Longitude,
+            Status = "Pending",
+            Technician = string.Empty,
+            GateCode = draft.GateCodes.Trim(),
+            AnimalsPresent = draft.AnimalsPresent,
+            ServiceDetails = draft.ProblemDescription.Trim(),
+            DateSubmitted = DateOnly.FromDateTime(DateTime.Today),
+            RouteGroup = null,
+            ScheduledDate = null,
+            ScheduledOrder = null,
+            ServiceStartupDate = draft.StartupDate,
+            ServiceContactName = draft.ServiceContactName.Trim(),
+            ServiceContactPhone = draft.ServiceContactPhone.Trim(),
+            BuilderCompanyName = draft.BuilderCompanyName.Trim(),
+            BuilderContactName = draft.BuilderContactName.Trim(),
+            BuilderContactPhone = draft.BuilderContactPhone.Trim(),
+            BuilderEmail = string.Empty,
+            HasPendingUpload = true
+        });
+
+        pendingChanges.Insert(0, new PendingChange
+        {
+            Id = Guid.NewGuid(),
+            CorrelationKey = requestId.ToString(),
+            EntityType = "Service Request",
+            EntityIdentifier = requestNumber,
+            Action = "Create",
+            Summary = $"Quick service request created for {street1}.",
+            QueuedAt = DateTimeOffset.UtcNow
+        });
+
+        var currentSnapshot = await GetSyncSnapshotAsync(cancellationToken);
+        await SaveAsync(CustomersKey, customers);
+        await SaveAsync(WorkOrdersKey, workOrders);
+        await SaveAsync(PendingChangesKey, pendingChanges);
+        await SaveAsync(SnapshotKey, new SyncSnapshot
+        {
+            LastSuccessfulSync = currentSnapshot.LastSuccessfulSync,
+            PendingUploadCount = pendingChanges.Count,
+            IsOfflineModeEnabled = currentSnapshot.IsOfflineModeEnabled,
+            HasCompletedSync = currentSnapshot.HasCompletedSync
+        });
+
+        return requestId;
+    }
+
     public async Task UpdateWorkOrderScheduleAsync(Guid workOrderId, DateOnly? scheduledDate, CancellationToken cancellationToken = default)
     {
         await EnsureSeededAsync();
@@ -369,38 +622,42 @@ public sealed class LocalFieldDataService(IBrowserStorageService storage) : IFie
                 .Max() + 1
             : null;
 
-        workOrders[workOrderIndex] = new WorkOrderSummary
-        {
-            Id = workOrder.Id,
-            CustomerId = workOrder.CustomerId,
-            AssignedToUserId = workOrder.AssignedToUserId,
-            WorkOrderNumber = workOrder.WorkOrderNumber,
-            CustomerName = workOrder.CustomerName,
-            Address = workOrder.Address,
-            Street1 = workOrder.Street1,
-            City = workOrder.City,
-            Latitude = workOrder.Latitude,
-            Longitude = workOrder.Longitude,
-            Status = workOrder.Status,
-            Technician = workOrder.Technician,
-            GateCode = workOrder.GateCode,
-            AnimalsPresent = workOrder.AnimalsPresent,
-            ServiceDetails = workOrder.ServiceDetails,
-            DateSubmitted = workOrder.DateSubmitted,
-            ScheduledDate = scheduledDate,
-            ScheduledOrder = nextScheduledOrder,
-            ServiceStartupDate = workOrder.ServiceStartupDate,
-            ServiceContactName = workOrder.ServiceContactName,
-            ServiceContactPhone = workOrder.ServiceContactPhone,
-            BuilderCompanyName = workOrder.BuilderCompanyName,
-            BuilderContactName = workOrder.BuilderContactName,
-            BuilderContactPhone = workOrder.BuilderContactPhone,
-            BuilderEmail = workOrder.BuilderEmail,
-            CompletedBy = workOrder.CompletedBy,
-            CompletedOn = workOrder.CompletedOn,
-            HasPendingUpload = workOrder.HasPendingUpload
-        };
+        workOrders[workOrderIndex] = CloneWorkOrder(
+            workOrder,
+            scheduledDate: scheduledDate,
+            useScheduledDate: true,
+            scheduledOrder: nextScheduledOrder,
+            useScheduledOrder: true);
 
+        await SaveAsync(WorkOrdersKey, workOrders);
+    }
+
+    public async Task UpdateWorkOrderRouteGroupAsync(Guid workOrderId, int? routeGroup, CancellationToken cancellationToken = default)
+    {
+        await EnsureSeededAsync();
+
+        var workOrders = (await GetWorkOrdersAsync(cancellationToken)).ToList();
+        var workOrderIndex = workOrders.FindIndex(workOrder => workOrder.Id == workOrderId);
+        if (workOrderIndex < 0)
+        {
+            return;
+        }
+
+        var workOrder = workOrders[workOrderIndex];
+        int? nextOrder = routeGroup.HasValue
+            ? workOrders
+                .Where(item => item.Id != workOrderId && item.RouteGroup == routeGroup)
+                .Select(item => item.ScheduledOrder ?? 0)
+                .DefaultIfEmpty(-1)
+                .Max() + 1
+            : null;
+
+        workOrders[workOrderIndex] = CloneWorkOrder(
+            workOrder,
+            routeGroup: routeGroup,
+            useRouteGroup: true,
+            scheduledOrder: nextOrder,
+            useScheduledOrder: true);
         await SaveAsync(WorkOrdersKey, workOrders);
     }
 
@@ -435,37 +692,17 @@ public sealed class LocalFieldDataService(IBrowserStorageService storage) : IFie
             .DefaultIfEmpty(-1)
             .Max() + 1;
 
-        workOrders[workOrderIndex] = new WorkOrderSummary
-        {
-            Id = workOrder.Id,
-            CustomerId = workOrder.CustomerId,
-            AssignedToUserId = assignedTech.Id,
-            WorkOrderNumber = workOrder.WorkOrderNumber,
-            CustomerName = workOrder.CustomerName,
-            Address = workOrder.Address,
-            Street1 = workOrder.Street1,
-            City = workOrder.City,
-            Latitude = workOrder.Latitude,
-            Longitude = workOrder.Longitude,
-            Status = "Active",
-            Technician = assignedTech.Username,
-            GateCode = workOrder.GateCode,
-            AnimalsPresent = workOrder.AnimalsPresent,
-            ServiceDetails = workOrder.ServiceDetails,
-            DateSubmitted = workOrder.DateSubmitted,
-            ScheduledDate = scheduledDate,
-            ScheduledOrder = nextScheduledOrder,
-            ServiceStartupDate = workOrder.ServiceStartupDate,
-            ServiceContactName = workOrder.ServiceContactName,
-            ServiceContactPhone = workOrder.ServiceContactPhone,
-            BuilderCompanyName = workOrder.BuilderCompanyName,
-            BuilderContactName = workOrder.BuilderContactName,
-            BuilderContactPhone = workOrder.BuilderContactPhone,
-            BuilderEmail = workOrder.BuilderEmail,
-            CompletedBy = workOrder.CompletedBy,
-            CompletedOn = workOrder.CompletedOn,
-            HasPendingUpload = true
-        };
+        workOrders[workOrderIndex] = CloneWorkOrder(
+            workOrder,
+            assignedToUserId: assignedTech.Id,
+            useAssignedToUserId: true,
+            status: "Active",
+            technician: assignedTech.Username,
+            scheduledDate: scheduledDate,
+            useScheduledDate: true,
+            scheduledOrder: nextScheduledOrder,
+            useScheduledOrder: true,
+            hasPendingUpload: true);
 
         queuedOfficeActions.RemoveAll(x => x.WorkOrderId == workOrderId);
         queuedOfficeActions.Insert(0, new QueuedServiceRequestOfficeAction
@@ -480,12 +717,12 @@ public sealed class LocalFieldDataService(IBrowserStorageService storage) : IFie
             QueuedAtUtc = DateTimeOffset.UtcNow
         });
 
-        pendingChanges.RemoveAll(change => change.EntityType == "Work Order" && change.CorrelationKey == workOrderId.ToString());
+        pendingChanges.RemoveAll(change => change.EntityType == "Service Request" && change.CorrelationKey == workOrderId.ToString());
         pendingChanges.Insert(0, new PendingChange
         {
             Id = Guid.NewGuid(),
             CorrelationKey = workOrderId.ToString(),
-            EntityType = "Work Order",
+            EntityType = "Service Request",
             EntityIdentifier = workOrder.WorkOrderNumber,
             Action = "Schedule",
             Summary = $"Service request scheduled for {scheduledDate:MM/dd/yyyy} and assigned to {assignedTech.Username}.",
@@ -560,39 +797,160 @@ public sealed class LocalFieldDataService(IBrowserStorageService storage) : IFie
                 continue;
             }
 
-            workOrders[sourceIndex] = new WorkOrderSummary
-            {
-                Id = item.Id,
-                CustomerId = item.CustomerId,
-                WorkOrderNumber = item.WorkOrderNumber,
-                CustomerName = item.CustomerName,
-                Address = item.Address,
-                Street1 = item.Street1,
-                City = item.City,
-                Latitude = item.Latitude,
-                Longitude = item.Longitude,
-                Status = item.Status,
-                Technician = item.Technician,
-                GateCode = item.GateCode,
-                AnimalsPresent = item.AnimalsPresent,
-                ServiceDetails = item.ServiceDetails,
-                DateSubmitted = item.DateSubmitted,
-                ScheduledDate = item.ScheduledDate,
-                ScheduledOrder = i,
-                ServiceStartupDate = item.ServiceStartupDate,
-                ServiceContactName = item.ServiceContactName,
-                ServiceContactPhone = item.ServiceContactPhone,
-                BuilderCompanyName = item.BuilderCompanyName,
-                BuilderContactName = item.BuilderContactName,
-                BuilderContactPhone = item.BuilderContactPhone,
-                BuilderEmail = item.BuilderEmail,
-                CompletedBy = item.CompletedBy,
-                CompletedOn = item.CompletedOn,
-                HasPendingUpload = item.HasPendingUpload
-            };
+            workOrders[sourceIndex] = CloneWorkOrder(item, scheduledOrder: i, useScheduledOrder: true);
         }
 
         await SaveAsync(WorkOrdersKey, workOrders);
+    }
+
+    public async Task ReorderRouteGroupAsync(Guid workOrderId, int direction, CancellationToken cancellationToken = default)
+    {
+        await EnsureSeededAsync();
+
+        if (direction == 0)
+        {
+            return;
+        }
+
+        var workOrders = (await GetWorkOrdersAsync(cancellationToken)).ToList();
+        var target = workOrders.FirstOrDefault(workOrder => workOrder.Id == workOrderId);
+        if (target?.RouteGroup is null)
+        {
+            return;
+        }
+
+        var routeGroup = target.RouteGroup.Value;
+        var groupItems = workOrders
+            .Where(workOrder => workOrder.RouteGroup == routeGroup)
+            .OrderBy(workOrder => workOrder.ScheduledOrder ?? int.MaxValue)
+            .ThenBy(workOrder => workOrder.Street1)
+            .ThenBy(workOrder => workOrder.Address)
+            .ToList();
+
+        var currentIndex = groupItems.FindIndex(workOrder => workOrder.Id == workOrderId);
+        if (currentIndex < 0)
+        {
+            return;
+        }
+
+        var destinationIndex = Math.Clamp(currentIndex + direction, 0, groupItems.Count - 1);
+        if (destinationIndex == currentIndex)
+        {
+            return;
+        }
+
+        var moving = groupItems[currentIndex];
+        groupItems.RemoveAt(currentIndex);
+        groupItems.Insert(destinationIndex, moving);
+
+        for (var i = 0; i < groupItems.Count; i++)
+        {
+            var item = groupItems[i];
+            var sourceIndex = workOrders.FindIndex(workOrder => workOrder.Id == item.Id);
+            if (sourceIndex >= 0)
+            {
+                workOrders[sourceIndex] = CloneWorkOrder(item, scheduledOrder: i, useScheduledOrder: true);
+            }
+        }
+
+        await SaveAsync(WorkOrdersKey, workOrders);
+    }
+
+    public async Task TombstoneWorkOrderAsync(Guid workOrderId, CancellationToken cancellationToken = default)
+    {
+        await EnsureSeededAsync();
+
+        var deletedWorkOrderIds = (await GetDeletedWorkOrderIdsAsync()).ToList();
+        if (!deletedWorkOrderIds.Contains(workOrderId))
+        {
+            deletedWorkOrderIds.Add(workOrderId);
+        }
+
+        var workOrders = (await GetRequiredAsync<IReadOnlyList<WorkOrderSummary>>(WorkOrdersKey, static () => Array.Empty<WorkOrderSummary>())).ToList();
+        var customers = (await GetRequiredAsync<IReadOnlyList<CustomerSummary>>(CustomersKey, static () => Array.Empty<CustomerSummary>())).ToList();
+        var claims = (await GetRequiredAsync<IReadOnlyList<ClaimSummary>>(ClaimsKey, static () => Array.Empty<ClaimSummary>())).ToList();
+        var pendingChanges = (await GetRequiredAsync<IReadOnlyList<PendingChange>>(PendingChangesKey, static () => Array.Empty<PendingChange>())).ToList();
+        var outboundState = await GetRequiredAsync(OutboundSyncKey, () => new OutboundSyncState());
+        var currentSnapshot = await GetSyncSnapshotAsync(cancellationToken);
+
+        var workOrder = workOrders.FirstOrDefault(item => item.Id == workOrderId);
+        var relatedClaimIds = claims
+            .Where(claim => claim.WorkOrderId == workOrderId)
+            .Select(claim => claim.Id)
+            .ToHashSet();
+
+        workOrders.RemoveAll(item => item.Id == workOrderId);
+        claims.RemoveAll(claim => claim.WorkOrderId == workOrderId);
+
+        if (workOrder is not null)
+        {
+            var remainingOpenCount = workOrders.Count(item =>
+                item.CustomerId == workOrder.CustomerId
+                && !item.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase)
+                && !deletedWorkOrderIds.Contains(item.Id));
+
+            for (var i = 0; i < customers.Count; i++)
+            {
+                if (customers[i].Id != workOrder.CustomerId)
+                {
+                    continue;
+                }
+
+                customers[i] = new CustomerSummary
+                {
+                    Id = customers[i].Id,
+                    Name = customers[i].Name,
+                    Address = customers[i].Address,
+                    Street1 = customers[i].Street1,
+                    Street2 = customers[i].Street2,
+                    City = customers[i].City,
+                    State = customers[i].State,
+                    Zip = customers[i].Zip,
+                    Phone = customers[i].Phone,
+                    ContactName = customers[i].ContactName,
+                    ContactEmail = customers[i].ContactEmail,
+                    GateCodes = customers[i].GateCodes,
+                    AnimalsPresent = customers[i].AnimalsPresent,
+                    OriginalInstallerDealer = customers[i].OriginalInstallerDealer,
+                    StartupDate = customers[i].StartupDate,
+                    Latitude = customers[i].Latitude,
+                    Longitude = customers[i].Longitude,
+                    OpenWorkOrderCount = remainingOpenCount
+                };
+            }
+        }
+
+        pendingChanges.RemoveAll(change =>
+            string.Equals(change.CorrelationKey, workOrderId.ToString(), StringComparison.OrdinalIgnoreCase)
+            || relatedClaimIds.Contains(ParseGuidOrEmpty(change.CorrelationKey))
+            || (!string.IsNullOrWhiteSpace(change.EntityIdentifier)
+                && workOrder is not null
+                && string.Equals(change.EntityIdentifier, workOrder.WorkOrderNumber, StringComparison.OrdinalIgnoreCase)));
+
+        await SaveAsync(CustomersKey, customers);
+        await SaveAsync(WorkOrdersKey, workOrders);
+        await SaveAsync(ClaimsKey, claims);
+        await SaveAsync(PendingChangesKey, pendingChanges);
+        await SaveAsync(DeletedWorkOrderIdsKey, deletedWorkOrderIds.Distinct().ToList());
+        await SaveAsync(OutboundSyncKey, new OutboundSyncState
+        {
+            ClaimsToCreate = outboundState.ClaimsToCreate
+                .Where(claim => claim.WorkOrderId != workOrderId && !relatedClaimIds.Contains(claim.LocalClaimId))
+                .ToList(),
+            ServiceRequestOfficeActions = outboundState.ServiceRequestOfficeActions
+                .Where(item => item.WorkOrderId != workOrderId)
+                .ToList(),
+            WorkOrdersToComplete = outboundState.WorkOrdersToComplete
+                .Where(item => item.WorkOrderId != workOrderId)
+                .ToList()
+        });
+        await SaveAsync(SnapshotKey, new SyncSnapshot
+        {
+            LastSuccessfulSync = currentSnapshot.LastSuccessfulSync,
+            PendingUploadCount = pendingChanges.Count,
+            IsOfflineModeEnabled = currentSnapshot.IsOfflineModeEnabled,
+            HasCompletedSync = currentSnapshot.HasCompletedSync
+        });
     }
 
     public async Task QueueWorkOrderCompletionAsync(Guid workOrderId, string completedBy, DateOnly completedOn, CancellationToken cancellationToken = default)
@@ -613,37 +971,12 @@ public sealed class LocalFieldDataService(IBrowserStorageService storage) : IFie
             return;
         }
 
-        var updatedWorkOrder = new WorkOrderSummary
-        {
-            Id = workOrder.Id,
-            CustomerId = workOrder.CustomerId,
-            AssignedToUserId = workOrder.AssignedToUserId,
-            WorkOrderNumber = workOrder.WorkOrderNumber,
-            CustomerName = workOrder.CustomerName,
-            Address = workOrder.Address,
-            Street1 = workOrder.Street1,
-            City = workOrder.City,
-            Latitude = workOrder.Latitude,
-            Longitude = workOrder.Longitude,
-            Status = "Completed",
-            Technician = workOrder.Technician,
-            GateCode = workOrder.GateCode,
-            AnimalsPresent = workOrder.AnimalsPresent,
-            ServiceDetails = workOrder.ServiceDetails,
-            DateSubmitted = workOrder.DateSubmitted,
-            ScheduledDate = workOrder.ScheduledDate,
-            ScheduledOrder = workOrder.ScheduledOrder,
-            ServiceStartupDate = workOrder.ServiceStartupDate,
-            ServiceContactName = workOrder.ServiceContactName,
-            ServiceContactPhone = workOrder.ServiceContactPhone,
-            BuilderCompanyName = workOrder.BuilderCompanyName,
-            BuilderContactName = workOrder.BuilderContactName,
-            BuilderContactPhone = workOrder.BuilderContactPhone,
-            BuilderEmail = workOrder.BuilderEmail,
-            CompletedBy = completedBy,
-            CompletedOn = completedOn,
-            HasPendingUpload = true
-        };
+        var updatedWorkOrder = CloneWorkOrder(
+            workOrder,
+            status: "Completed",
+            completedBy: completedBy,
+            completedOn: completedOn,
+            hasPendingUpload: true);
 
         var workOrderIndex = workOrders.FindIndex(w => w.Id == workOrderId);
         workOrders[workOrderIndex] = updatedWorkOrder;
@@ -699,15 +1032,15 @@ public sealed class LocalFieldDataService(IBrowserStorageService storage) : IFie
             QueuedAtUtc = DateTimeOffset.UtcNow
         });
 
-        pendingChanges.RemoveAll(change => change.EntityType == "Work Order" && change.EntityIdentifier == workOrder.WorkOrderNumber);
+        pendingChanges.RemoveAll(change => change.EntityType == "Service Request" && change.EntityIdentifier == workOrder.WorkOrderNumber);
         pendingChanges.Insert(0, new PendingChange
         {
             Id = Guid.NewGuid(),
             CorrelationKey = workOrderId.ToString(),
-            EntityType = "Work Order",
+            EntityType = "Service Request",
             EntityIdentifier = workOrder.WorkOrderNumber,
             Action = "Complete",
-            Summary = $"Work order marked complete locally with {queuedClaims.Count(c => c.WorkOrderId == workOrderId)} queued claim(s).",
+            Summary = $"Service request marked complete locally with {queuedClaims.Count(c => c.WorkOrderId == workOrderId)} queued claim(s).",
             QueuedAt = DateTimeOffset.UtcNow
         });
 
@@ -753,37 +1086,7 @@ public sealed class LocalFieldDataService(IBrowserStorageService storage) : IFie
                 continue;
             }
 
-            workOrders[i] = new WorkOrderSummary
-            {
-                Id = workOrders[i].Id,
-                CustomerId = workOrders[i].CustomerId,
-                AssignedToUserId = workOrders[i].AssignedToUserId,
-                WorkOrderNumber = workOrders[i].WorkOrderNumber,
-                CustomerName = workOrders[i].CustomerName,
-                Address = workOrders[i].Address,
-                Street1 = workOrders[i].Street1,
-                City = workOrders[i].City,
-                Latitude = workOrders[i].Latitude,
-                Longitude = workOrders[i].Longitude,
-                Status = workOrders[i].Status,
-                Technician = workOrders[i].Technician,
-                GateCode = workOrders[i].GateCode,
-                AnimalsPresent = workOrders[i].AnimalsPresent,
-                ServiceDetails = workOrders[i].ServiceDetails,
-                DateSubmitted = workOrders[i].DateSubmitted,
-                ScheduledDate = workOrders[i].ScheduledDate,
-                ScheduledOrder = workOrders[i].ScheduledOrder,
-                ServiceStartupDate = workOrders[i].ServiceStartupDate,
-                ServiceContactName = workOrders[i].ServiceContactName,
-                ServiceContactPhone = workOrders[i].ServiceContactPhone,
-                BuilderCompanyName = workOrders[i].BuilderCompanyName,
-                BuilderContactName = workOrders[i].BuilderContactName,
-                BuilderContactPhone = workOrders[i].BuilderContactPhone,
-                BuilderEmail = workOrders[i].BuilderEmail,
-                CompletedBy = workOrders[i].CompletedBy,
-                CompletedOn = workOrders[i].CompletedOn,
-                HasPendingUpload = false
-            };
+            workOrders[i] = CloneWorkOrder(workOrders[i], hasPendingUpload: false);
         }
 
         var syncedCorrelationKeys = syncedState.ClaimsToCreate
@@ -823,6 +1126,7 @@ public sealed class LocalFieldDataService(IBrowserStorageService storage) : IFie
             await SaveAsync(ClaimsKey, Array.Empty<ClaimSummary>());
             await SaveAsync(PendingChangesKey, Array.Empty<PendingChange>());
             await SaveAsync(OutboundSyncKey, new OutboundSyncState());
+            await SaveAsync(DeletedWorkOrderIdsKey, Array.Empty<Guid>());
         }
 
         await NormalizeLegacySeedQueueAsync();
@@ -893,36 +1197,7 @@ public sealed class LocalFieldDataService(IBrowserStorageService storage) : IFie
                 continue;
             }
 
-            workOrders[i] = new WorkOrderSummary
-            {
-                Id = workOrders[i].Id,
-                CustomerId = workOrders[i].CustomerId,
-                WorkOrderNumber = workOrders[i].WorkOrderNumber,
-                CustomerName = workOrders[i].CustomerName,
-                Address = workOrders[i].Address,
-                Street1 = street1,
-                City = workOrders[i].City,
-                Latitude = workOrders[i].Latitude,
-                Longitude = workOrders[i].Longitude,
-                Status = workOrders[i].Status,
-                Technician = workOrders[i].Technician,
-                GateCode = workOrders[i].GateCode,
-                AnimalsPresent = workOrders[i].AnimalsPresent,
-                ServiceDetails = workOrders[i].ServiceDetails,
-                DateSubmitted = workOrders[i].DateSubmitted,
-                ScheduledDate = workOrders[i].ScheduledDate,
-                ScheduledOrder = workOrders[i].ScheduledOrder,
-                ServiceStartupDate = workOrders[i].ServiceStartupDate,
-                ServiceContactName = workOrders[i].ServiceContactName,
-                ServiceContactPhone = workOrders[i].ServiceContactPhone,
-                BuilderCompanyName = workOrders[i].BuilderCompanyName,
-                BuilderContactName = workOrders[i].BuilderContactName,
-                BuilderContactPhone = workOrders[i].BuilderContactPhone,
-                BuilderEmail = workOrders[i].BuilderEmail,
-                CompletedBy = workOrders[i].CompletedBy,
-                CompletedOn = workOrders[i].CompletedOn,
-                HasPendingUpload = workOrders[i].HasPendingUpload
-            };
+            workOrders[i] = CloneWorkOrder(workOrders[i], street1: street1);
 
             workOrderStreetLookup[workOrders[i].Id] = street1;
             workOrdersChanged = true;
@@ -1055,4 +1330,78 @@ public sealed class LocalFieldDataService(IBrowserStorageService storage) : IFie
             || deletedWorkOrderIds.Contains(correlationId)
             || deletedClaimIds.Contains(correlationId);
     }
+
+    private async Task<IReadOnlySet<Guid>> GetDeletedWorkOrderIdsAsync()
+    {
+        var deletedIds = await GetRequiredAsync<IReadOnlyList<Guid>>(DeletedWorkOrderIdsKey, static () => Array.Empty<Guid>());
+        return deletedIds.ToHashSet();
+    }
+
+    private static Guid ParseGuidOrEmpty(string? value) =>
+        Guid.TryParse(value, out var parsed) ? parsed : Guid.Empty;
+
+    private static WorkOrderSummary CloneWorkOrder(
+        WorkOrderSummary existing,
+        Guid? assignedToUserId = null,
+        bool useAssignedToUserId = false,
+        string? status = null,
+        string? technician = null,
+        string? street1 = null,
+        int? routeGroup = null,
+        bool useRouteGroup = false,
+        DateOnly? scheduledDate = null,
+        bool useScheduledDate = false,
+        int? scheduledOrder = null,
+        bool useScheduledOrder = false,
+        string? completedBy = null,
+        DateOnly? completedOn = null,
+        bool? hasPendingUpload = null)
+    {
+        return new WorkOrderSummary
+        {
+            Id = existing.Id,
+            CustomerId = existing.CustomerId,
+            AssignedToUserId = useAssignedToUserId ? assignedToUserId : existing.AssignedToUserId,
+            WorkOrderNumber = existing.WorkOrderNumber,
+            CustomerName = existing.CustomerName,
+            Address = existing.Address,
+            Street1 = street1 ?? existing.Street1,
+            City = existing.City,
+            Latitude = existing.Latitude,
+            Longitude = existing.Longitude,
+            Status = status ?? existing.Status,
+            Technician = technician ?? existing.Technician,
+            GateCode = existing.GateCode,
+            AnimalsPresent = existing.AnimalsPresent,
+            ServiceDetails = existing.ServiceDetails,
+            DateSubmitted = existing.DateSubmitted,
+            RouteGroup = useRouteGroup ? routeGroup : existing.RouteGroup,
+            ScheduledDate = useScheduledDate ? scheduledDate : existing.ScheduledDate,
+            ScheduledOrder = useScheduledOrder ? scheduledOrder : existing.ScheduledOrder,
+            ServiceStartupDate = existing.ServiceStartupDate,
+            ServiceContactName = existing.ServiceContactName,
+            ServiceContactPhone = existing.ServiceContactPhone,
+            BuilderCompanyName = existing.BuilderCompanyName,
+            BuilderContactName = existing.BuilderContactName,
+            BuilderContactPhone = existing.BuilderContactPhone,
+            BuilderEmail = existing.BuilderEmail,
+            CompletedBy = completedBy ?? existing.CompletedBy,
+            CompletedOn = completedOn ?? existing.CompletedOn,
+            HasPendingUpload = hasPendingUpload ?? existing.HasPendingUpload
+        };
+    }
+
+    private static string BuildAddress(string street1, string? street2, string city, string state, string zip)
+    {
+        var line1 = string.IsNullOrWhiteSpace(street2)
+            ? street1.Trim()
+            : $"{street1.Trim()} {street2.Trim()}";
+
+        return $"{line1}, {city.Trim()}, {state.Trim()} {zip.Trim()}".Trim();
+    }
+
+    private static string FirstLine(string? value) =>
+        string.IsNullOrWhiteSpace(value)
+            ? string.Empty
+            : value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? value;
 }

@@ -53,17 +53,17 @@ else
                 {
                     <strong>Server updates are waiting for this device.</strong>
                     <span>
-                        @_serverStatus.CustomerCount customer change(s), @_serverStatus.WorkOrderCount work order change(s), @_serverStatus.ClaimCount claim change(s)
+                        @_serverStatus.CustomerCount customer change(s), @_serverStatus.WorkOrderCount service request change(s), @_serverStatus.ClaimCount claim change(s)
                         @if (_serverStatus.DeletedCustomerCount + _serverStatus.DeletedWorkOrderCount + _serverStatus.DeletedClaimCount > 0)
                         {
-                            <text> · @_serverStatus.DeletedCustomerCount customer delete(s), @_serverStatus.DeletedWorkOrderCount work order delete(s), @_serverStatus.DeletedClaimCount claim delete(s)</text>
+                            <text> · @_serverStatus.DeletedCustomerCount customer delete(s), @_serverStatus.DeletedWorkOrderCount service request delete(s), @_serverStatus.DeletedClaimCount claim delete(s)</text>
                         }
                     </span>
                 }
                 else
                 {
                     <strong>No server-side updates are waiting.</strong>
-                    <span>This device already has the latest customer, work order, and claim changes from the server.</span>
+                    <span>This device already has the latest customer, service request, and claim changes from the server.</span>
                 }
             </div>
         }
@@ -74,7 +74,7 @@ else
                 <strong>@_outboundSyncState.ClaimsToCreate.Count</strong>
             </article>
             <article class="queue-card">
-                <span class="summary-label">Queued Work Orders</span>
+                <span class="summary-label">Queued Service Requests</span>
                 <strong>@_outboundSyncState.WorkOrdersToComplete.Count</strong>
             </article>
             <article class="queue-card">
@@ -89,10 +89,10 @@ else
                 <strong>@_lastSyncResult.Message</strong>
                 <span>
                     @_lastSyncResult.SyncKind ·
-                    @_lastSyncResult.CustomerCount customer change(s), @_lastSyncResult.WorkOrderCount work order change(s), @_lastSyncResult.ClaimCount claim change(s)
+                    @_lastSyncResult.CustomerCount customer change(s), @_lastSyncResult.WorkOrderCount service request change(s), @_lastSyncResult.ClaimCount claim change(s)
                     @if (_lastSyncResult.DeletedCustomerCount + _lastSyncResult.DeletedWorkOrderCount + _lastSyncResult.DeletedClaimCount > 0)
                     {
-                        <text> · @_lastSyncResult.DeletedCustomerCount customer delete(s), @_lastSyncResult.DeletedWorkOrderCount work order delete(s), @_lastSyncResult.DeletedClaimCount claim delete(s)</text>
+                        <text> · @_lastSyncResult.DeletedCustomerCount customer delete(s), @_lastSyncResult.DeletedWorkOrderCount service request delete(s), @_lastSyncResult.DeletedClaimCount claim delete(s)</text>
                     }
                 </span>
             </div>
