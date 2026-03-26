@@ -1,0 +1,242 @@
+@page "/customers/{CustomerId:guid}/quick-claim"
+@attribute [Authorize(Roles = "Admin,Office")]
+@using CodeBlue.Field.App.Models
+@using CodeBlue.Field.App.Services
+@using CodeBlue.Field.App.Util
+@inject IFieldDataService FieldData
+@inject IFieldAccountClient AccountClient
+@inject NavigationManager Nav
+
+<PageTitle>Quick Claim</PageTitle>
+
+@if (_loading)
+{
+    <p>Loading customer…</p>
+}
+else if (_customer is null)
+{
+    <section class="section-block">
+        <h2>Customer not found</h2>
+        <p class="section-copy">The current offline snapshot does not contain this customer.</p>
+    </section>
+}
+else
+{
+    <section class="field-page field-work-order-page">
+        <section class="section-block">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow dashboard-eyebrow">QUICK CLAIM</p>
+                </div>
+            </div>
+        </section>
+
+        @if (!string.IsNullOrWhiteSpace(_saveMessage))
+        {
+            <div class="sync-result">
+                <strong>@_saveMessage</strong>
+                <span>This quick claim is stored locally and will push during the next sync.</span>
+            </div>
+        }
+
+        <div class="field-expansion-list">
+            <details class="field-expansion" open>
+                <summary class="field-expansion-summary field-expansion-summary-address">
+                    <span class="field-expansion-title">@StreetOnly(_customer)</span>
+                </summary>
+                <div class="field-expansion-body">
+                    <article class="field-paper">
+                        <div class="field-info-grid">
+                            @InfoRow("Contact", BlankDash(_customer.ContactName))
+                            @InfoRow("Phone", BlankDash(_customer.Phone))
+                            @InfoRow("Installer", BlankDash(_customer.OriginalInstallerDealer))
+                            @InfoRow("Startup", DisplayDate(_customer.StartupDate))
+                            @InfoRow("Completed By", BlankDash(_currentUsername))
+                        </div>
+                    </article>
+                </div>
+            </details>
+
+            <details class="field-expansion" open>
+                <summary class="field-expansion-summary">
+                    @PanelIcon("checklist")
+                    <span class="field-expansion-title">Claim Information</span>
+                </summary>
+                <div class="field-expansion-body">
+                    <article class="field-paper">
+                        <div class="claim-form-grid">
+                            <label class="form-field">
+                                <span>Failure Date</span>
+                                <input type="date" value="@_failureDateString" @onchange="OnFailureDateChanged" />
+                            </label>
+                            <label class="form-field">
+                                <span>Repair Date *</span>
+                                <input type="date" value="@_repairDateString" @onchange="OnRepairDateChanged" />
+                            </label>
+                            <label class="form-field">
+                                <span>Component Code</span>
+                                <input @bind="_componentCode" />
+                            </label>
+                            <label class="form-field">
+                                <span>Model Number</span>
+                                <input @bind="_modelNumber" />
+                            </label>
+                            <label class="form-field">
+                                <span>ID / Serial Number</span>
+                                <input @bind="_idSerialNumber" />
+                            </label>
+                            <label class="form-field">
+                                <span>Component Serial Number</span>
+                                <input @bind="_componentSerialNumber" />
+                            </label>
+                        </div>
+
+                        <label class="form-field form-field-full field-form-spacer">
+                            <span>Notes for Website *</span>
+                            <textarea @bind="_notes" rows="9"></textarea>
+                        </label>
+
+                        @if (!string.IsNullOrWhiteSpace(_validationMessage))
+                        {
+                            <div class="validation-banner">@_validationMessage</div>
+                        }
+
+                        <div class="form-actions">
+                            <button class="sync-button" type="button" @onclick="SaveQuickClaimAsync" disabled="@_saving">@(_saving ? "Saving..." : "Create Quick Claim")</button>
+                            <button class="ghost-link-button" type="button" @onclick="@(() => Nav.NavigateTo($"/customers/{CustomerId}"))">Back to Customer</button>
+                        </div>
+                    </article>
+                </div>
+            </details>
+        </div>
+    </section>
+}
+
+@code {
+    [Parameter] public Guid CustomerId { get; set; }
+
+    private bool _loading = true;
+    private bool _saving;
+    private CustomerSummary? _customer;
+    private string _currentUsername = string.Empty;
+    private string _componentCode = string.Empty;
+    private string _modelNumber = string.Empty;
+    private string _idSerialNumber = string.Empty;
+    private string _componentSerialNumber = string.Empty;
+    private string _notes = string.Empty;
+    private string _failureDateString = string.Empty;
+    private string _repairDateString = DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd");
+    private string? _validationMessage;
+    private string? _saveMessage;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        var customers = await FieldData.GetCustomersAsync();
+        _customer = customers.FirstOrDefault(x => x.Id == CustomerId);
+
+        try
+        {
+            var profile = await AccountClient.GetProfileAsync();
+            _currentUsername = profile.Username ?? string.Empty;
+        }
+        catch
+        {
+            _currentUsername = string.Empty;
+        }
+
+        _failureDateString = _customer?.StartupDate?.ToString("yyyy-MM-dd") ?? string.Empty;
+        _loading = false;
+    }
+
+    private async Task SaveQuickClaimAsync()
+    {
+        if (_customer is null)
+            return;
+
+        _validationMessage = null;
+        _saveMessage = null;
+
+        if (!DateOnly.TryParse(_repairDateString, out var repairDate))
+        {
+            _validationMessage = "Repair date is required.";
+            return;
+        }
+
+        DateOnly? failureDate = DateOnly.TryParse(_failureDateString, out var parsedFailure) ? parsedFailure : null;
+
+        if (string.IsNullOrWhiteSpace(_notes))
+        {
+            _validationMessage = "Notes are required.";
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            await FieldData.QueueNewClaimAsync(new NewClaimDraft
+            {
+                WorkOrderId = null,
+                CustomerId = _customer.Id,
+                WorkOrderNumber = string.Empty,
+                CustomerName = _customer.Name,
+                ServiceAddress = StreetOnly(_customer),
+                ContactName = _customer.ContactName,
+                ContactPhone = _customer.Phone,
+                OriginalInstallerDealer = _customer.OriginalInstallerDealer,
+                OriginalInstallationDate = _customer.StartupDate,
+                Equipment = BuildEquipmentDescription(),
+                FailureDate = failureDate,
+                RepairDate = repairDate,
+                ComponentCode = _componentCode.Trim(),
+                ModelNumber = _modelNumber.Trim(),
+                IdSerialNumber = _idSerialNumber.Trim(),
+                ComponentSerialNumber = _componentSerialNumber.Trim(),
+                Notes = _notes.Trim(),
+                CompletedBy = _currentUsername,
+                Serial1Photo = null,
+                Serial2Photo = null
+            });
+
+            _saveMessage = "Quick claim created locally.";
+            Nav.NavigateTo("/customers");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void OnFailureDateChanged(ChangeEventArgs args) => _failureDateString = args.Value?.ToString() ?? string.Empty;
+    private void OnRepairDateChanged(ChangeEventArgs args) => _repairDateString = args.Value?.ToString() ?? string.Empty;
+
+    private string BuildEquipmentDescription()
+    {
+        var parts = new[] { _componentCode.Trim(), _modelNumber.Trim() }.Where(x => !string.IsNullOrWhiteSpace(x));
+        var description = string.Join(" • ", parts);
+        return string.IsNullOrWhiteSpace(description) ? "Quick Claim" : description;
+    }
+
+    private static RenderFragment PanelIcon(string kind) => builder =>
+    {
+        var path = kind switch
+        {
+            "checklist" => "M19 3H5c-1.1 0-2 .9-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5c0-1.1-.9-2-2-2m-9 14H7v-2h3zm0-4H7v-2h3zm0-4H7V7h3zm7.59 6.41L16 17l-2.59-2.59L12 15.83 16 19.83l5-5zM17 9h-5V7h5z",
+            _ => "M12 2 2 22h20z"
+        };
+
+        builder.OpenElement(0, "svg");
+        builder.AddAttribute(1, "class", "field-expansion-icon");
+        builder.AddAttribute(2, "viewBox", "0 0 24 24");
+        builder.AddAttribute(3, "aria-hidden", "true");
+        builder.OpenElement(4, "path");
+        builder.AddAttribute(5, "d", path);
+        builder.CloseElement();
+        builder.CloseElement();
+    };
+
+    private static RenderFragment InfoRow(string label, string? value) => @<div class="field-info-row"><span>@label</span><strong>@BlankDash(value)</strong></div>;
+    private static string StreetOnly(CustomerSummary customer) => string.IsNullOrWhiteSpace(customer.Street1) ? customer.Address : customer.Street1;
+    private static string BlankDash(string? value) => string.IsNullOrWhiteSpace(value) ? "—" : value;
+    private static string DisplayDate(DateOnly? date) => date?.ToString("MM/dd/yyyy") ?? "—";
+}

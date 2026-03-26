@@ -1,0 +1,180 @@
+@page "/sync"
+@attribute [Authorize(Roles = "Admin,Office,Technician")]
+@using CodeBlue.Field.App.Models
+@using CodeBlue.Field.App.Services
+@inject IFieldDataService FieldData
+@inject IFieldSyncService FieldSync
+
+<PageTitle>Sync</PageTitle>
+
+
+
+@if (_snapshot is null || _pendingChanges is null)
+{
+    <p>Loading sync data...</p>
+}
+else
+{
+    <section class="section-block dashboard-header-block sync-page-header">
+        <div class="section-heading dashboard-header-row">
+            <div class="dashboard-header-copy">
+                <p class="eyebrow dashboard-eyebrow">Sync</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="section-block sync-card">
+        <div class="sync-card-topline">
+            <div class="sync-card-copy">
+                <p class="eyebrow">Pending Queue</p>
+                <p class="sync-card-count">@_pendingChanges.Count change(s) waiting to sync</p>
+            </div>
+            <button class="sync-button" type="button" @onclick="RunSyncAsync" disabled="@_isSyncing">
+                @(_isSyncing ? "Syncing..." : "Sync with Server")
+            </button>
+        </div>
+
+        <div class="sync-section-status">
+            <FieldStatusStrip Snapshot="_snapshot" />
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_statusWarning))
+        {
+            <div class="sync-server-status">
+                <strong>Server status unavailable.</strong>
+                <span>@_statusWarning</span>
+            </div>
+        }
+
+        @if (_serverStatus is not null)
+        {
+            <div class="sync-server-status @(_serverStatus.HasRemoteChanges ? "is-actionable" : "is-clear")">
+                @if (_serverStatus.HasRemoteChanges)
+                {
+                    <strong>Server updates are waiting for this device.</strong>
+                    <span>
+                        @_serverStatus.CustomerCount customer change(s), @_serverStatus.WorkOrderCount work order change(s), @_serverStatus.ClaimCount claim change(s)
+                        @if (_serverStatus.DeletedCustomerCount + _serverStatus.DeletedWorkOrderCount + _serverStatus.DeletedClaimCount > 0)
+                        {
+                            <text> · @_serverStatus.DeletedCustomerCount customer delete(s), @_serverStatus.DeletedWorkOrderCount work order delete(s), @_serverStatus.DeletedClaimCount claim delete(s)</text>
+                        }
+                    </span>
+                }
+                else
+                {
+                    <strong>No server-side updates are waiting.</strong>
+                    <span>This device already has the latest customer, work order, and claim changes from the server.</span>
+                }
+            </div>
+        }
+
+        <div class="queue-overview">
+            <article class="queue-card">
+                <span class="summary-label">Queued Claims</span>
+                <strong>@_outboundSyncState.ClaimsToCreate.Count</strong>
+            </article>
+            <article class="queue-card">
+                <span class="summary-label">Queued Work Orders</span>
+                <strong>@_outboundSyncState.WorkOrdersToComplete.Count</strong>
+            </article>
+            <article class="queue-card">
+                <span class="summary-label">Total Pending</span>
+                <strong>@_pendingChanges.Count</strong>
+            </article>
+        </div>
+
+        @if (_lastSyncResult is not null)
+        {
+            <div class="sync-result">
+                <strong>@_lastSyncResult.Message</strong>
+                <span>
+                    @_lastSyncResult.SyncKind ·
+                    @_lastSyncResult.CustomerCount customer change(s), @_lastSyncResult.WorkOrderCount work order change(s), @_lastSyncResult.ClaimCount claim change(s)
+                    @if (_lastSyncResult.DeletedCustomerCount + _lastSyncResult.DeletedWorkOrderCount + _lastSyncResult.DeletedClaimCount > 0)
+                    {
+                        <text> · @_lastSyncResult.DeletedCustomerCount customer delete(s), @_lastSyncResult.DeletedWorkOrderCount work order delete(s), @_lastSyncResult.DeletedClaimCount claim delete(s)</text>
+                    }
+                </span>
+            </div>
+        }
+
+
+    </section>
+    <div class="my-3"/>
+    <section class="detail-panel">
+        <h3>Pending Change List</h3>
+        <div class="data-list">
+            @if (_pendingChanges.Count == 0)
+            {
+                <article class="empty-card">
+                    <h3>Everything is synced</h3>
+                    <p>There are no queued local changes waiting to be pushed right now.</p>
+                </article>
+            }
+            else
+            {
+                @foreach (var change in _pendingChanges.OrderByDescending(x => x.QueuedAt))
+                {
+                    <article class="data-card">
+                        <div class="data-card-main">
+                            <h3>@change.EntityType · @change.EntityIdentifier</h3>
+                            <p>@change.Summary</p>
+                        </div>
+                        <div class="data-card-meta">
+                            <span>@change.Action</span>
+                            <span>@change.QueuedAt.LocalDateTime.ToString("g")</span>
+                        </div>
+                    </article>
+                }
+            }
+        </div>
+    </section>
+}
+
+@code {
+    private SyncSnapshot? _snapshot;
+    private FieldSyncStatusDto? _serverStatus;
+    private IReadOnlyList<PendingChange>? _pendingChanges;
+    private OutboundSyncState _outboundSyncState = new();
+    private SyncResult? _lastSyncResult;
+    private bool _isSyncing;
+    private string? _statusWarning;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task RunSyncAsync()
+    {
+        _isSyncing = true;
+        try
+        {
+            _lastSyncResult = await FieldSync.SyncWithServerAsync();
+            await LoadAsync();
+        }
+        finally
+        {
+            _isSyncing = false;
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _snapshot = await FieldData.GetSyncSnapshotAsync();
+        _pendingChanges = await FieldData.GetPendingChangesAsync();
+        _outboundSyncState = await FieldData.GetOutboundSyncStateAsync();
+
+        _statusWarning = null;
+
+        try
+        {
+            _serverStatus = await FieldSync.GetServerStatusAsync();
+        }
+        catch (Exception)
+        {
+            _serverStatus = null;
+            _statusWarning = "Server sync status is temporarily unavailable. Local pending items are still shown below.";
+        }
+    }
+}

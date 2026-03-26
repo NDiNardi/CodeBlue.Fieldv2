@@ -1,0 +1,138 @@
+@page "/service-requests"
+@attribute [Authorize(Roles = "Admin,Office")]
+@using CodeBlue.Field.App.Models
+@using CodeBlue.Field.App.Services
+@inject IFieldDataService FieldData
+
+<PageTitle>Service Requests</PageTitle>
+
+<section class="section-block dashboard-header-block">
+    <div class="section-heading dashboard-header-row">
+        <div class="dashboard-header-copy">
+            <p class="eyebrow dashboard-eyebrow">Service Requests</p>
+        </div>
+    </div>
+</section>
+
+@if (_workOrders is null)
+{
+    <p>Loading service requests...</p>
+}
+else
+{
+    <section class="section-block">
+        <div class="toolbar-row">
+            <label class="search-box search-box-full">
+                <input @bind="_search" @bind:event="oninput" placeholder="Search address, details, or contact" />
+            </label>
+        </div>
+
+        <div class="data-list">
+            @if (VisibleRequests.Count == 0)
+            {
+                <article class="empty-card">
+                    <h3>No service requests</h3>
+                    <p>There are no pending work orders in the local field snapshot right now.</p>
+                </article>
+            }
+            else
+            {
+                @foreach (var request in VisibleRequests)
+                {
+                    <a class="data-card data-card-link" href="@($"/service-requests/{request.Id}")">
+                        <div class="history-card-row request-card-shell">
+                            <div class="history-card-main">
+                                <div class="address-title">@StreetOnly(request)</div>
+                                <div class="card-subline card-subline-clamp">@ProblemText(request)</div>
+                            </div>
+                            <div class="card-meta-stack request-card-meta-stack">
+                                <div class="request-card-inline-actions">
+                                    @if (request.CustomerId != Guid.Empty)
+                                    {
+                                        <a class="request-card-icon-link" href="@($"/customers/{request.CustomerId}")" @onclick:stopPropagation="true" @onclick:preventDefault="false" aria-label="Open customer" title="Open customer">
+                                            <svg class="request-card-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                                <path d="M12 12c2.76 0 5-2.69 5-6s-2.24-6-5-6-5 2.69-5 6 2.24 6 5 6Zm0 2c-3.34 0-10 1.68-10 5v3h20v-3c0-3.32-6.66-5-10-5Z"></path>
+                                            </svg>
+                                        </a>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(request.ServiceContactPhone))
+                                    {
+                                        <a class="request-card-icon-link" href="@TelLink(request.ServiceContactPhone)" @onclick:stopPropagation="true" @onclick:preventDefault="false" aria-label="Call customer" title="Call customer">
+                                            <svg class="request-card-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                                <path d="M6.62 10.79a15.05 15.05 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1-.24c1.12.37 2.33.56 3.59.56a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1C10.3 21 3 13.7 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.26.19 2.47.56 3.59a1 1 0 0 1-.25 1z"></path>
+                                            </svg>
+                                        </a>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    </a>
+                }
+            }
+        </div>
+    </section>
+}
+
+@code {
+    private IReadOnlyList<WorkOrderSummary>? _workOrders;
+    private string _search = string.Empty;
+
+    private IReadOnlyList<WorkOrderSummary> VisibleRequests =>
+        (_workOrders ?? [])
+            .Where(IsServiceRequest)
+            .Where(MatchesSearch)
+            .OrderByDescending(x => x.DateSubmitted)
+            .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _workOrders = await FieldData.GetWorkOrdersAsync();
+    }
+
+    private bool MatchesSearch(WorkOrderSummary workOrder)
+    {
+        if (string.IsNullOrWhiteSpace(_search))
+        {
+            return true;
+        }
+
+        var query = _search.Trim();
+        return Contains(workOrder.Address, query)
+            || Contains(workOrder.Street1, query)
+            || Contains(workOrder.CustomerName, query)
+            || Contains(workOrder.ServiceDetails, query)
+            || Contains(workOrder.ServiceContactName, query)
+            || Contains(workOrder.ServiceContactPhone, query);
+    }
+
+    private static bool Contains(string value, string query) =>
+        !string.IsNullOrWhiteSpace(value) && value.Contains(query, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsServiceRequest(WorkOrderSummary workOrder) =>
+        workOrder.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase)
+        || workOrder.Status.Equals("New", StringComparison.OrdinalIgnoreCase);
+
+    private static string StreetOnly(WorkOrderSummary workOrder) =>
+        !string.IsNullOrWhiteSpace(workOrder.Street1)
+            ? workOrder.Street1
+            : FirstLine(string.IsNullOrWhiteSpace(workOrder.Address) ? workOrder.CustomerName : workOrder.Address);
+
+    private static string ProblemText(WorkOrderSummary workOrder) =>
+        string.IsNullOrWhiteSpace(workOrder.ServiceDetails) ? "No problem details recorded." : workOrder.ServiceDetails;
+
+    private static string TelLink(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return "#";
+        }
+
+        var digits = new string(raw.Where(char.IsDigit).ToArray());
+        return string.IsNullOrWhiteSpace(digits) ? "#" : $"tel:{digits}";
+    }
+
+    private static string FirstLine(string value) =>
+        string.IsNullOrWhiteSpace(value)
+            ? "Unknown Address"
+            : value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? value;
+}

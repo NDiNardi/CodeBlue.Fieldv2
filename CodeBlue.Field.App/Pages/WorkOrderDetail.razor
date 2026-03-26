@@ -1,0 +1,816 @@
+@page "/work-orders/{Id:guid}"
+@page "/service-requests/{Id:guid}"
+@page "/work-orders/active/{Id:guid}"
+@page "/work-orders/history/{Id:guid}"
+@attribute [Authorize(Roles = "Admin,Office,Technician")]
+@using System.IO
+@using CodeBlue.Field.App.Models
+@using CodeBlue.Field.App.Services
+@using CodeBlue.Field.App.Util
+@using Microsoft.AspNetCore.Components.Forms
+@inject IFieldDataService FieldData
+@inject IFieldAccountClient AccountClient
+@inject HttpClient Http
+@inject IJSRuntime JS
+
+<PageTitle>@HeaderLabel</PageTitle>
+
+@if (_loading)
+{
+    <p>Loading work order...</p>
+}
+else if (_workOrder is null)
+{
+    <section class="section-block">
+        <h2>Work order not found</h2>
+        <p class="section-copy">The current offline snapshot does not contain this work order.</p>
+    </section>
+}
+else
+{
+    <section class="field-page field-work-order-page">
+        <section class="section-block">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">@HeaderLabel</p>
+                </div>
+            </div>
+        </section>
+
+        @if (!string.IsNullOrWhiteSpace(_saveMessage))
+        {
+            <div class="sync-result">
+                <strong>@_saveMessage</strong>
+                <span>The claim and any serial photos were saved locally and added to the pending sync queue.</span>
+            </div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_completeMessage))
+        {
+            <div class="sync-result">
+                <strong>@_completeMessage</strong>
+                <span>The work order remains on the device and will push back during the next sync.</span>
+            </div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_officeActionMessage))
+        {
+            <div class="sync-result">
+                <strong>@_officeActionMessage</strong>
+                <span>Office actions for this service request were updated locally.</span>
+            </div>
+        }
+
+        <div class="field-expansion-list">
+            <details class="field-expansion" open>
+                <summary class="field-expansion-summary field-expansion-summary-address">
+                    <span class="field-expansion-title">@StreetOnly(_workOrder)</span>
+                </summary>
+                <div class="field-expansion-body">
+                    <article class="field-paper field-hero-card">
+                        <div class="field-hero-subline">
+                            <span>Submitted: @DisplayDate(_workOrder.DateSubmitted)</span>
+                            <a href="@MapsLink(_workOrder)" target="_blank" rel="noopener">Open in Maps</a>
+                        </div>
+
+                        @if (HasMapCoordinates)
+                        {
+                            <div id="@_mapElementId" class="field-detail-map"></div>
+                        }
+                        else
+                        {
+                            <div class="empty-card route-map-empty">
+                                <h3>No map coordinates</h3>
+                                <p>This work order does not have a saved pin in the current snapshot.</p>
+                            </div>
+                        }
+                    </article>
+
+                    <div class="field-chip-row">
+                        <article class="field-chip-card">
+                            <span class="field-chip-key">Gate Code(s)</span>
+                            <strong>@BlankDash(_workOrder.GateCode)</strong>
+                        </article>
+                        <article class="field-chip-card">
+                            <span class="field-chip-key">Animals</span>
+                            <strong>@(_workOrder.AnimalsPresent ? "Yes" : "No")</strong>
+                        </article>
+                        <article class="field-chip-card">
+                            <span class="field-chip-key">Startup</span>
+                            <strong>@DisplayDate(_workOrder.ServiceStartupDate)</strong>
+                        </article>
+                    </div>
+                </div>
+            </details>
+
+            <details class="field-expansion">
+                <summary class="field-expansion-summary">
+                    @PanelIcon("list")
+                    <span class="field-expansion-title">Details</span>
+                </summary>
+                <div class="field-expansion-body">
+                    <article class="field-paper">
+                        <div class="stack-copy">
+                            <p>@ProblemText(_workOrder)</p>
+                        </div>
+                    </article>
+                </div>
+            </details>
+
+            <details class="field-expansion">
+                <summary class="field-expansion-summary">
+                    @PanelIcon("phone")
+                    <span class="field-expansion-title">Contact</span>
+                </summary>
+                <div class="field-expansion-body">
+                    <article class="field-paper">
+                        <div class="field-info-grid">
+                            @InfoRow("Name", _workOrder.ServiceContactName)
+                            @if (!string.IsNullOrWhiteSpace(_workOrder.ServiceContactPhone))
+                            {
+                                @InfoLinkRow("Phone", _workOrder.ServiceContactPhone, TelLink(_workOrder.ServiceContactPhone))
+                            }
+                            else
+                            {
+                                @InfoRow("Phone", "—")
+                            }
+                        </div>
+                    </article>
+                </div>
+            </details>
+
+            <details class="field-expansion">
+                <summary class="field-expansion-summary">
+                    @PanelIcon("construction")
+                    <span class="field-expansion-title">Builder</span>
+                </summary>
+                <div class="field-expansion-body">
+                    <article class="field-paper">
+                        <div class="field-info-grid">
+                            @InfoRow("Company", _workOrder.BuilderCompanyName)
+                            @InfoRow("Contact", _workOrder.BuilderContactName)
+                            @if (!string.IsNullOrWhiteSpace(_workOrder.BuilderContactPhone))
+                            {
+                                @InfoLinkRow("Phone", _workOrder.BuilderContactPhone, TelLink(_workOrder.BuilderContactPhone))
+                            }
+                            else
+                            {
+                                @InfoRow("Phone", "—")
+                            }
+                            @InfoRow("Email", _workOrder.BuilderEmail)
+                        </div>
+                    </article>
+                </div>
+            </details>
+
+            @if (IsServiceRequest(_workOrder))
+            {
+                <details class="field-expansion">
+                    <summary class="field-expansion-summary">
+                        @PanelIcon("person")
+                        <span class="field-expansion-title">Office Actions</span>
+                    </summary>
+                    <div class="field-expansion-body">
+                        <article class="field-paper">
+                            <div class="claim-form-grid">
+                                <label class="form-field">
+                                    <span>Scheduled Date *</span>
+                                    <input type="date" value="@_officeScheduledDateString" @onchange="OnOfficeScheduledDateChanged" />
+                                </label>
+                                <label class="form-field">
+                                    <span>Assigned To *</span>
+                                    <select value="@(_officeAssignedToUserId?.ToString() ?? string.Empty)" @onchange="OnOfficeAssignedToChanged">
+                                        <option value="">Select technician</option>
+                                        @foreach (var technician in _technicians)
+                                        {
+                                            <option value="@technician.Id">@technician.Username</option>
+                                        }
+                                    </select>
+                                </label>
+                            </div>
+
+                            @if (!string.IsNullOrWhiteSpace(_officeActionValidationMessage))
+                            {
+                                <div class="validation-banner">@_officeActionValidationMessage</div>
+                            }
+
+                            <div class="form-actions">
+                                <button class="sync-button" type="button" @onclick="SaveOfficeActionsAsync" disabled="@_saving">@(_saving ? "Saving..." : "Create Work Order")</button>
+                            </div>
+                        </article>
+                    </div>
+                </details>
+            }
+
+            @if (_workOrder.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase))
+            {
+                <details class="field-expansion">
+                    <summary class="field-expansion-summary">
+                        @PanelIcon("task")
+                        <span class="field-expansion-title">Code Blue Information</span>
+                    </summary>
+                    <div class="field-expansion-body">
+                        <article class="field-paper">
+                            <div class="field-info-grid">
+                                @InfoRow("Completed By", BlankDash(_workOrder.CompletedBy))
+                                @InfoRow("Completed Date", DisplayDate(_workOrder.CompletedOn))
+                            </div>
+                        </article>
+                    </div>
+                </details>
+            }
+
+            @if (_workOrder.Status.Equals("Active", StringComparison.OrdinalIgnoreCase))
+            {
+                <details class="field-expansion">
+                    <summary class="field-expansion-summary">
+                        @PanelIcon("checklist")
+                        <span class="field-expansion-title">Add a Claim</span>
+                    </summary>
+                    <div class="field-expansion-body">
+                        <article class="field-paper">
+                            <div class="claim-form-grid">
+                                <label class="form-field">
+                                    <span>Component Code</span>
+                                    <input @bind="_componentCode" />
+                                </label>
+                                <label class="form-field">
+                                    <span>Model Number</span>
+                                    <input @bind="_modelNumber" />
+                                </label>
+                                <label class="form-field">
+                                    <span>Repair Date *</span>
+                                    <input type="date" value="@_repairDateString" @onchange="OnRepairDateChanged" />
+                                </label>
+                            </div>
+
+                            <div class="field-upload-grid">
+                                <div class="upload-field">
+                                    <div>Serial #1 (photo)</div>
+                                    <div class="upload-block">
+                                        <div id="serial1CameraPicker" class="cb-file-input-target">
+                                            <InputFile OnChange="OnSerial1Selected" AdditionalAttributes="_cameraCaptureAttributes" />
+                                        </div>
+                                        <div id="serial1GalleryPicker" class="cb-file-input-target">
+                                            <InputFile OnChange="OnSerial1Selected" accept="image/*" class="cb-file-input" />
+                                        </div>
+                                        <div class="upload-center">
+                                            <button type="button" class="cb-file-button" @onclick="@(() => OpenClaimSourceModal(1))">Choose File</button>
+                                        </div>
+                                    </div>
+                                    @if (!string.IsNullOrWhiteSpace(_serial1PreviewUrl))
+                                    {
+                                        <img class="upload-thumb" src="@_serial1PreviewUrl" alt="Serial #1 preview" />
+                                    }
+                                </div>
+
+                                <div class="upload-field">
+                                    <div>Serial #2 (photo)</div>
+                                    <div class="upload-block">
+                                        <div id="serial2CameraPicker" class="cb-file-input-target">
+                                            <InputFile OnChange="OnSerial2Selected" AdditionalAttributes="_cameraCaptureAttributes" />
+                                        </div>
+                                        <div id="serial2GalleryPicker" class="cb-file-input-target">
+                                            <InputFile OnChange="OnSerial2Selected" accept="image/*" class="cb-file-input" />
+                                        </div>
+                                        <div class="upload-center">
+                                            <button type="button" class="cb-file-button" @onclick="@(() => OpenClaimSourceModal(2))">Choose File</button>
+                                        </div>
+                                    </div>
+                                    @if (!string.IsNullOrWhiteSpace(_serial2PreviewUrl))
+                                    {
+                                        <img class="upload-thumb" src="@_serial2PreviewUrl" alt="Serial #2 preview" />
+                                    }
+                                </div>
+                            </div>
+
+                            @if (_showClaimSourceModal)
+                            {
+                                <div class="cb-file-choice-backdrop" @onclick="CloseClaimSourceModal">
+                                    <div class="cb-file-choice-card" @onclick:stopPropagation="true">
+                                        <h3>Add Photo</h3>
+                                        <p>Choose how you want to attach the image.</p>
+                                        <div class="field-choice-actions">
+                                            <button type="button" class="sync-button" @onclick="ChooseActiveCameraAsync">Take Picture</button>
+                                            <button type="button" class="ghost-link-button" @onclick="ChooseActiveGalleryAsync">Select From Gallery</button>
+                                            <button type="button" class="ghost-link-button ghost-link-button-light" @onclick="CloseClaimSourceModal">Cancel</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+
+                            <label class="form-field form-field-full field-form-spacer">
+                                <span>Notes (copied into manufacturer site) *</span>
+                                <textarea @bind="_notes" rows="9"></textarea>
+                            </label>
+
+                            @if (!string.IsNullOrWhiteSpace(_validationMessage))
+                            {
+                                <div class="validation-banner">@_validationMessage</div>
+                            }
+
+                            <div class="form-actions">
+                                <button class="sync-button" type="button" @onclick="SaveClaimLocallyAsync" disabled="@_saving">@(_saving ? "Saving..." : "Add Claim")</button>
+                            </div>
+                        </article>
+                    </div>
+                </details>
+
+                <details class="field-expansion">
+                    <summary class="field-expansion-summary">
+                        @PanelIcon("history")
+                        <span class="field-expansion-title">Claims</span>
+                    </summary>
+                    <div class="field-expansion-body">
+                        <article class="field-paper">
+                            @if (RelatedClaims.Count == 0)
+                            {
+                                <article class="empty-card">
+                                    <h3>No linked claims</h3>
+                                    <p>No claims are currently attached to this work order.</p>
+                                </article>
+                            }
+                            else
+                            {
+                                <div class="field-claim-table">
+                                    @foreach (var claim in RelatedClaims)
+                                    {
+                                        <a class="field-claim-row" href="@($"/claims/{claim.Id}")">
+                                            <div class="field-claim-row-main">
+                                                <strong>@ClaimDescription(claim)</strong>
+                                                <span>@BlankDash(claim.Notes)</span>
+                                            </div>
+                                            <div class="field-claim-row-meta">
+                                                @if (!string.IsNullOrWhiteSpace(claim.SerialNumber1StorageKey))
+                                                {
+                                                    <img class="field-claim-thumb" src="@ClaimFileUrl(Http.BaseAddress, claim.SerialNumber1StorageKey)" alt="Serial #1" />
+                                                }
+                                                @if (!string.IsNullOrWhiteSpace(claim.SerialNumber2StorageKey))
+                                                {
+                                                    <img class="field-claim-thumb" src="@ClaimFileUrl(Http.BaseAddress, claim.SerialNumber2StorageKey)" alt="Serial #2" />
+                                                }
+                                            </div>
+                                        </a>
+                                    }
+                                </div>
+                            }
+                        </article>
+                    </div>
+                </details>
+            }
+        </div>
+
+        @if (_workOrder.Status.Equals("Active", StringComparison.OrdinalIgnoreCase))
+        {
+            <button class="field-complete-work-order" type="button" @onclick="CompleteWorkOrderLocallyAsync">Complete Work Order</button>
+        }
+    </section>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private bool _loading = true;
+    private bool _saving;
+    private WorkOrderSummary? _workOrder;
+    private IReadOnlyList<ClaimSummary> _claims = [];
+    private IReadOnlyList<CustomerSummary> _customers = [];
+    private IReadOnlyList<FieldTechnicianOption> _technicians = [];
+    private string _componentCode = string.Empty;
+    private string _modelNumber = string.Empty;
+    private string _notes = string.Empty;
+    private string _repairDateString = DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd");
+    private string _officeScheduledDateString = string.Empty;
+    private Guid? _officeAssignedToUserId;
+    private string? _validationMessage;
+    private string? _saveMessage;
+    private string? _completeMessage;
+    private string? _officeActionMessage;
+    private string? _officeActionValidationMessage;
+    private string? _lastMapRenderKey;
+    private string _mapElementId = $"cbWorkOrderMap-{Guid.NewGuid():N}";
+    private string _currentUsername = string.Empty;
+    private bool _mapAssetsReady;
+    private IBrowserFile? _serial1File;
+    private IBrowserFile? _serial2File;
+    private string? _serial1PreviewUrl;
+    private string? _serial2PreviewUrl;
+    private bool _showClaimSourceModal;
+    private int _activeClaimPhotoSlot;
+    private readonly IDictionary<string, object> _cameraCaptureAttributes = new Dictionary<string, object>
+    {
+        ["accept"] = "image/*",
+        ["class"] = "cb-file-input",
+        ["capture"] = "environment"
+    };
+
+    private IReadOnlyList<ClaimSummary> RelatedClaims =>
+        _claims.Where(x => x.WorkOrderId == Id).OrderByDescending(x => x.CompletedOn ?? x.RepairDate ?? x.FailureDate ?? DateOnly.MinValue).ToList();
+
+    private CustomerSummary? _linkedCustomer =>
+        _workOrder is null ? null : _customers.FirstOrDefault(x => x.Id == _workOrder.CustomerId);
+
+    private bool HasMapCoordinates => _workOrder?.Latitude is not null && _workOrder?.Longitude is not null;
+
+    private string HeaderLabel =>
+        _workOrder is null
+            ? "Work Order"
+            : IsServiceRequest(_workOrder)
+                ? "Service Request"
+                : IsCompleted(_workOrder)
+                    ? "Historic Work Order"
+                    : "Work Order";
+
+    private static bool IsServiceRequest(WorkOrderSummary workOrder) =>
+        workOrder.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase)
+        || workOrder.Status.Equals("New", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsCompleted(WorkOrderSummary workOrder) =>
+        workOrder.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase);
+
+    private string EffectiveUsername =>
+        !string.IsNullOrWhiteSpace(_currentUsername)
+            ? _currentUsername
+            : _workOrder is not null ? TechnicianOrFallback(_workOrder) : string.Empty;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        _lastMapRenderKey = null;
+        await ReloadAsync();
+        await LoadCurrentUsernameAsync();
+        ResetForm();
+        _loading = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await RenderMapAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        var workOrders = await FieldData.GetWorkOrdersAsync();
+        _claims = await FieldData.GetClaimsAsync();
+        _customers = await FieldData.GetCustomersAsync();
+        _technicians = await FieldData.GetTechniciansAsync();
+        _workOrder = workOrders.FirstOrDefault(x => x.Id == Id);
+    }
+
+    private async Task LoadCurrentUsernameAsync()
+    {
+        try
+        {
+            var profile = await AccountClient.GetProfileAsync();
+            _currentUsername = profile.Username ?? string.Empty;
+        }
+        catch
+        {
+            _currentUsername = string.Empty;
+        }
+    }
+
+    private void ResetForm()
+    {
+        _componentCode = string.Empty;
+        _modelNumber = string.Empty;
+        _notes = string.Empty;
+        _repairDateString = DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd");
+        _officeScheduledDateString = _workOrder?.ScheduledDate?.ToString("yyyy-MM-dd") ?? string.Empty;
+        _officeAssignedToUserId = _workOrder?.AssignedToUserId;
+        _serial1File = null;
+        _serial2File = null;
+        _serial1PreviewUrl = null;
+        _serial2PreviewUrl = null;
+        _showClaimSourceModal = false;
+        _activeClaimPhotoSlot = 0;
+        _validationMessage = null;
+        _officeActionValidationMessage = null;
+    }
+
+    private async Task RenderMapAsync()
+    {
+        if (_workOrder is null || !HasMapCoordinates)
+        {
+            return;
+        }
+
+        await EnsureMapAssetsAsync();
+
+        var mapKey = $"{_workOrder.Id}:{_workOrder.Latitude}:{_workOrder.Longitude}:{_workOrder.Address}";
+        if (_lastMapRenderKey == mapKey)
+        {
+            return;
+        }
+
+        _lastMapRenderKey = mapKey;
+        await JS.InvokeVoidAsync("codeBlue.maps.render", _mapElementId, _workOrder.Address, StreetOnly(_workOrder), _workOrder.Latitude, _workOrder.Longitude);
+        await JS.InvokeVoidAsync("codeBlue.maps.invalidate", _mapElementId);
+    }
+
+    private async Task EnsureMapAssetsAsync()
+    {
+        if (_mapAssetsReady)
+        {
+            return;
+        }
+
+        await JS.InvokeVoidAsync("codeBlue.assets.ensureMaps");
+        _mapAssetsReady = true;
+    }
+
+    private async Task SaveClaimLocallyAsync()
+    {
+        if (_workOrder is null || _linkedCustomer is null)
+        {
+            return;
+        }
+
+        _validationMessage = null;
+        _saveMessage = null;
+        _completeMessage = null;
+
+        if (!DateOnly.TryParse(_repairDateString, out var repairDate))
+        {
+            _validationMessage = "Repair date is required.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_notes))
+        {
+            _validationMessage = "Notes are required.";
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            await FieldData.QueueNewClaimAsync(new NewClaimDraft
+            {
+                WorkOrderId = _workOrder.Id,
+                CustomerId = _linkedCustomer.Id,
+                WorkOrderNumber = _workOrder.WorkOrderNumber,
+                CustomerName = _linkedCustomer.Name,
+                ServiceAddress = StreetOnly(_linkedCustomer),
+                ContactName = _workOrder.ServiceContactName,
+                ContactPhone = _workOrder.ServiceContactPhone,
+                OriginalInstallerDealer = _linkedCustomer.OriginalInstallerDealer,
+                OriginalInstallationDate = _linkedCustomer.StartupDate,
+                Equipment = BuildEquipmentDescription(),
+                RepairDate = repairDate,
+                ComponentCode = _componentCode.Trim(),
+                ModelNumber = _modelNumber.Trim(),
+                IdSerialNumber = string.Empty,
+                ComponentSerialNumber = string.Empty,
+                Notes = _notes.Trim(),
+                CompletedBy = EffectiveUsername,
+                Serial1Photo = await BuildClaimImagePayloadAsync(_serial1File),
+                Serial2Photo = await BuildClaimImagePayloadAsync(_serial2File)
+            });
+
+            await ReloadAsync();
+            ResetForm();
+            _saveMessage = "Claim created locally.";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task CompleteWorkOrderLocallyAsync()
+    {
+        if (_workOrder is null)
+        {
+            return;
+        }
+
+        var completedOn = DateOnly.TryParse(_repairDateString, out var parsedDate) ? parsedDate : DateOnly.FromDateTime(DateTime.Today);
+        await FieldData.QueueWorkOrderCompletionAsync(_workOrder.Id, EffectiveUsername, completedOn);
+        await ReloadAsync();
+        _completeMessage = $"Work order {_workOrder.WorkOrderNumber} marked complete locally.";
+    }
+
+    private async Task SaveOfficeActionsAsync()
+    {
+        if (_workOrder is null)
+        {
+            return;
+        }
+
+        _officeActionValidationMessage = null;
+        _officeActionMessage = null;
+        _saveMessage = null;
+        _completeMessage = null;
+
+        if (!DateOnly.TryParse(_officeScheduledDateString, out var scheduledDate))
+        {
+            _officeActionValidationMessage = "Scheduled date is required.";
+            return;
+        }
+
+        if (!_officeAssignedToUserId.HasValue || _officeAssignedToUserId == Guid.Empty)
+        {
+            _officeActionValidationMessage = "Assigned To is required.";
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            await FieldData.QueueServiceRequestOfficeActionAsync(_workOrder.Id, scheduledDate, _officeAssignedToUserId.Value);
+            await ReloadAsync();
+            _officeScheduledDateString = _workOrder?.ScheduledDate?.ToString("yyyy-MM-dd") ?? scheduledDate.ToString("yyyy-MM-dd");
+            _officeAssignedToUserId = _workOrder?.AssignedToUserId ?? _officeAssignedToUserId;
+            _officeActionMessage = $"Office actions saved for work order {_workOrder?.WorkOrderNumber}.";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void OpenClaimSourceModal(int photoSlot)
+    {
+        _activeClaimPhotoSlot = photoSlot;
+        _showClaimSourceModal = true;
+    }
+
+    private void CloseClaimSourceModal()
+    {
+        _showClaimSourceModal = false;
+        _activeClaimPhotoSlot = 0;
+    }
+
+    private Task ChooseActiveCameraAsync() => LaunchClaimPickerForActiveSlotAsync(true);
+    private Task ChooseActiveGalleryAsync() => LaunchClaimPickerForActiveSlotAsync(false);
+
+    private async Task LaunchClaimPickerForActiveSlotAsync(bool camera)
+    {
+        var pickerId = (_activeClaimPhotoSlot, camera) switch
+        {
+            (1, true) => "serial1CameraPicker",
+            (1, false) => "serial1GalleryPicker",
+            (2, true) => "serial2CameraPicker",
+            (2, false) => "serial2GalleryPicker",
+            _ => null
+        };
+
+        CloseClaimSourceModal();
+        if (string.IsNullOrWhiteSpace(pickerId))
+        {
+            return;
+        }
+
+        await InvokeAsync(StateHasChanged);
+        await Task.Delay(100);
+        await JS.InvokeVoidAsync("codeBlue.fileInputs.open", pickerId);
+    }
+
+    private async Task OnSerial1Selected(InputFileChangeEventArgs e)
+    {
+        _serial1File = e.File;
+        _serial1PreviewUrl = await BuildImagePreviewDataUrl(e.File);
+    }
+
+    private async Task OnSerial2Selected(InputFileChangeEventArgs e)
+    {
+        _serial2File = e.File;
+        _serial2PreviewUrl = await BuildImagePreviewDataUrl(e.File);
+    }
+
+    private void OnRepairDateChanged(ChangeEventArgs args) => _repairDateString = args.Value?.ToString() ?? string.Empty;
+    private void OnOfficeScheduledDateChanged(ChangeEventArgs args) => _officeScheduledDateString = args.Value?.ToString() ?? string.Empty;
+    private void OnOfficeAssignedToChanged(ChangeEventArgs args) =>
+        _officeAssignedToUserId = Guid.TryParse(args.Value?.ToString(), out var parsed) ? parsed : null;
+
+    private static async Task<string?> BuildImagePreviewDataUrl(IBrowserFile? file)
+    {
+        if (file is null)
+        {
+            return null;
+        }
+
+        var contentType = ResolveImageContentType(file);
+        if (string.IsNullOrWhiteSpace(contentType) || !contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        const long maxBytes = 5_000_000;
+        try
+        {
+            await using var stream = file.OpenReadStream(maxAllowedSize: maxBytes);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            return $"data:{contentType};base64,{Convert.ToBase64String(ms.ToArray())}";
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static async Task<ClaimImagePayload?> BuildClaimImagePayloadAsync(IBrowserFile? file)
+    {
+        if (file is null)
+        {
+            return null;
+        }
+
+        var contentType = ResolveImageContentType(file);
+        if (string.IsNullOrWhiteSpace(contentType) || !contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        const long maxBytes = 10 * 1024 * 1024;
+        await using var stream = file.OpenReadStream(maxAllowedSize: maxBytes);
+        using var ms = new MemoryStream();
+        await stream.CopyToAsync(ms);
+        return new ClaimImagePayload
+        {
+            FileName = file.Name ?? "claim-image.jpg",
+            ContentType = contentType,
+            Base64Data = Convert.ToBase64String(ms.ToArray())
+        };
+    }
+
+    private static string? ResolveImageContentType(IBrowserFile file)
+    {
+        if (!string.IsNullOrWhiteSpace(file.ContentType) && file.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+        {
+            return file.ContentType;
+        }
+
+        var ext = Path.GetExtension(file.Name)?.ToLowerInvariant();
+        return ext switch
+        {
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".png" => "image/png",
+            ".webp" => "image/webp",
+            ".gif" => "image/gif",
+            _ => null
+        };
+    }
+
+    private string BuildEquipmentDescription()
+    {
+        var parts = new[] { _componentCode.Trim(), _modelNumber.Trim() }.Where(x => !string.IsNullOrWhiteSpace(x));
+        var description = string.Join(" • ", parts);
+        return string.IsNullOrWhiteSpace(description) ? "Equipment" : description;
+    }
+
+    private static RenderFragment PanelIcon(string kind) => builder =>
+    {
+        var path = kind switch
+        {
+            "list" => "M4 10.5h3v3H4zm0-6h3v3H4zm0 12h3v3H4zm5 0h11v3H9zm0-6h11v3H9zm0-6h11v3H9z",
+            "phone" => "M6.62 10.79a15.46 15.46 0 0 0 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1C10.07 21 3 13.93 3 5c0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.24.2 2.45.57 3.57.11.35.03.74-.25 1.02z",
+            "construction" => "m21.67 18.17-5.5-5.5 2.35-2.35c.2-.2.2-.51 0-.71l-3.54-3.54a.5.5 0 0 0-.71 0l-1.41 1.41-2.12-2.12 1.41-1.41a.5.5 0 0 0 0-.71L8.61.61a.5.5 0 0 0-.71 0L5.55 2.96l5.5 5.5-8.9 8.9c-.39.39-.39 1.02 0 1.41l2.12 2.12c.39.39 1.02.39 1.41 0l8.9-8.9 5.5 5.5c.39.39.39 1.02 0 1.41l.71-.71c.39-.39.39-1.02 0-1.41",
+            "task" => "M22 5.18 10.59 16.6 5.35 11.36l1.41-1.41 3.83 3.82L20.59 3.77zM12 20c-4.41 0-8-3.59-8-8 0-1.57.46-3.03 1.24-4.26L3.78 6.28A9.96 9.96 0 0 0 2 12c0 5.52 4.48 10 10 10 3.71 0 6.93-2.02 8.66-5.02l-1.46-1.46A7.96 7.96 0 0 1 12 20",
+            "checklist" => "M19 3H5c-1.1 0-2 .9-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5c0-1.1-.9-2-2-2m-9 14H7v-2h3zm0-4H7v-2h3zm0-4H7V7h3zm7.59 6.41L16 17l-2.59-2.59L12 15.83 16 19.83l5-5zM17 9h-5V7h5z",
+            "history" => "M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6a7 7 0 1 1 2.05 4.95l-1.42 1.42A9 9 0 1 0 13 3m-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8z",
+            "person" => "M18 14c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4m0-2a4 4 0 1 0 0-8 4 4 0 0 0 0 8M6 10v3H3v2h3v3h2v-3h3v-2H8v-3z",
+            _ => "M12 2 2 22h20z"
+        };
+
+        builder.OpenElement(0, "svg");
+        builder.AddAttribute(1, "class", "field-expansion-icon");
+        builder.AddAttribute(2, "viewBox", "0 0 24 24");
+        builder.AddAttribute(3, "aria-hidden", "true");
+        builder.OpenElement(4, "path");
+        builder.AddAttribute(5, "d", path);
+        builder.CloseElement();
+        builder.CloseElement();
+    };
+
+    private static RenderFragment InfoRow(string label, string? value) => @<div class="field-info-row"><span>@label</span><strong>@BlankDash(value)</strong></div>;
+    private static RenderFragment InfoLinkRow(string label, string? value, string href) => @<div class="field-info-row"><span>@label</span><a href="@href">@BlankDash(value)</a></div>;
+    private static string StreetOnly(WorkOrderSummary workOrder) =>
+        !string.IsNullOrWhiteSpace(workOrder.Street1)
+            ? workOrder.Street1
+            : string.IsNullOrWhiteSpace(workOrder.Address)
+                ? workOrder.CustomerName
+                : workOrder.Address.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? workOrder.Address;
+    private static string StreetOnly(CustomerSummary customer) => string.IsNullOrWhiteSpace(customer.Street1) ? customer.Address : customer.Street1;
+    private static string ProblemText(WorkOrderSummary workOrder) => string.IsNullOrWhiteSpace(workOrder.ServiceDetails) ? "No service details recorded." : workOrder.ServiceDetails;
+    private static string ClaimDescription(ClaimSummary claim)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(claim.ComponentCode)) parts.Add(claim.ComponentCode);
+        if (!string.IsNullOrWhiteSpace(claim.ModelNumber)) parts.Add(claim.ModelNumber);
+        return parts.Count == 0 ? "Claim" : string.Join(" • ", parts);
+    }
+    private static string TechnicianOrFallback(WorkOrderSummary workOrder) => string.IsNullOrWhiteSpace(workOrder.Technician) ? "Unassigned" : workOrder.Technician;
+    private static string BlankDash(string? value) => string.IsNullOrWhiteSpace(value) ? "—" : value;
+    private static string DisplayDate(DateOnly? date) => date?.ToString("MM/dd/yyyy") ?? "—";
+    private static string MapsLink(WorkOrderSummary workOrder) => $"https://www.google.com/maps/search/?api=1&query={Uri.EscapeDataString(workOrder.Address)}";
+    private static string TelLink(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return "#";
+        var digits = new string(raw.Where(char.IsDigit).ToArray());
+        return string.IsNullOrWhiteSpace(digits) ? "#" : $"tel:{digits}";
+    }
+    private static string ClaimFileUrl(Uri? baseAddress, string storageKey) => ClaimImageUtil.ResolveImageUrl(baseAddress, storageKey);
+}

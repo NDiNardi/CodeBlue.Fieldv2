@@ -1,0 +1,188 @@
+@page "/customers"
+@attribute [Authorize(Roles = "Admin,Office")]
+@using CodeBlue.Field.App.Models
+@using CodeBlue.Field.App.Services
+@inject IFieldDataService FieldData
+@inject NavigationManager Navigation
+
+<PageTitle>Customers</PageTitle>
+
+<section class="section-block dashboard-header-block">
+    <div class="section-heading dashboard-header-row">
+        <div class="dashboard-header-copy">
+            <p class="eyebrow dashboard-eyebrow">Customers</p>
+        </div>
+    </div>
+</section>
+
+@if (_customers is null)
+{
+    <p>Loading customers...</p>
+}
+else
+{
+    <section class="section-block">
+        <div class="toolbar-row">
+            <label class="search-box search-box-full">
+                <span>Search</span>
+                <input @bind="_search" @bind:event="oninput" @bind:after="ResetToFirstPage" placeholder="Search address, contact, phone, or installer" />
+            </label>
+        </div>
+
+        <div class="data-list">
+            @foreach (var customer in VisibleCustomers)
+            {
+                <div class="data-card data-card-link"
+                     role="link"
+                     tabindex="0"
+                     @onclick="@(() => OpenCustomer(customer.Id))"
+                     @onkeydown="@(args => OnCustomerCardKeyDown(args, customer.Id))">
+                    <div class="customer-card-row" style="width:100%;">
+                        <div class="customer-card-main">
+                            <div class="customer-card-header address-title">
+                                @StreetOnly(customer)
+                            </div>
+                            <div class="card-subline card-subline-clamp card-subline-single">
+                                @NameLine(customer)
+                            </div>
+                        </div>
+                        <div class="customer-card-actions">
+                            <div class="card-icon-links">
+                                <a href="@($"/customers/{customer.Id}")" 
+                                   @onclick:stopPropagation="true"
+                                   @onclick:preventDefault="false"
+                                   aria-label="Open customer" 
+                                   title="Open customer">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true" style="width:0.95rem; height:0.95rem; fill:currentColor; display:block;">
+                                        <path d="M12 12c2.76 0 5-2.69 5-6s-2.24-6-5-6-5 2.69-5 6 2.24 6 5 6Zm0 2c-3.34 0-10 1.68-10 5v3h20v-3c0-3.32-6.66-5-10-5Z"></path>
+                                    </svg>
+                                </a>
+                                @if (!string.IsNullOrWhiteSpace(customer.Phone))
+                                {
+                                    <a href="@TelLink(customer.Phone)"
+                                       @onclick:stopPropagation="true"
+                                       @onclick:preventDefault="false"
+                                       aria-label="Call customer"
+                                       title="Call customer">
+                                        <svg viewBox="0 0 24 24" aria-hidden="true" style="width:0.95rem; height:0.95rem; fill:currentColor; display:block;">
+                                            <path d="M6.62 10.79a15.05 15.05 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1-.24c1.12.37 2.33.56 3.59.56a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1C10.3 21 3 13.7 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.26.19 2.47.56 3.59a1 1 0 0 1-.25 1z"></path>
+                                        </svg>
+                                    </a>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <div class="pagination-row">
+            <span class="muted-note">Showing @(StartIndex + 1)-@EndIndex of @FilteredCustomers.Count customer(s)</span>
+            <div class="pagination-actions pagination-actions-inline">
+                <button class="secondary-button" type="button" @onclick="PrevPage" disabled="@(_page == 1)">Prev</button>
+                <span class="pagination-current">Page @_page of @TotalPages</span>
+                <button class="secondary-button" type="button" @onclick="NextPage" disabled="@(_page >= TotalPages)">Next</button>
+            </div>
+        </div>
+    </section>
+}
+
+@code {
+    private const int PageSize = 50;
+
+    private IReadOnlyList<CustomerSummary>? _customers;
+    private string _search = string.Empty;
+    private int _page = 1;
+
+    private IReadOnlyList<CustomerSummary> FilteredCustomers =>
+        (_customers ?? [])
+            .Where(MatchesSearch)
+            .OrderBy(x => StreetOnly(x))
+            .ToList();
+
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(FilteredCustomers.Count / (double)PageSize));
+    private int StartIndex => (Math.Clamp(_page, 1, TotalPages) - 1) * PageSize;
+    private int EndIndex => Math.Min(StartIndex + PageSize, FilteredCustomers.Count);
+
+    private IReadOnlyList<CustomerSummary> VisibleCustomers =>
+        FilteredCustomers
+            .Skip(StartIndex)
+            .Take(PageSize)
+            .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _customers = await FieldData.GetCustomersAsync();
+    }
+
+    private void ResetToFirstPage() => _page = 1;
+
+    private void PrevPage()
+    {
+        if (_page > 1)
+        {
+            _page--;
+        }
+    }
+
+    private void NextPage()
+    {
+        if (_page < TotalPages)
+        {
+            _page++;
+        }
+    }
+
+    private void OpenCustomer(Guid id) => Navigation.NavigateTo($"/customers/{id}");
+
+    private void OnCustomerCardKeyDown(KeyboardEventArgs args, Guid id)
+    {
+        if (args.Key is "Enter" or " ")
+        {
+            OpenCustomer(id);
+        }
+    }
+
+    private bool MatchesSearch(CustomerSummary customer)
+    {
+        if (string.IsNullOrWhiteSpace(_search))
+        {
+            return true;
+        }
+
+        var query = _search.Trim();
+        return Contains(customer.Address, query)
+            || Contains(customer.Street1, query)
+            || Contains(customer.Name, query)
+            || Contains(customer.ContactName, query)
+            || Contains(customer.Phone, query)
+            || Contains(customer.OriginalInstallerDealer, query);
+    }
+
+    private static bool Contains(string value, string query) =>
+        !string.IsNullOrWhiteSpace(value) && value.Contains(query, StringComparison.OrdinalIgnoreCase);
+
+    private static string StreetOnly(CustomerSummary customer) =>
+        !string.IsNullOrWhiteSpace(customer.Street1)
+            ? customer.Street1
+            : FirstLine(customer.Address);
+
+    private static string NameLine(CustomerSummary customer) =>
+        string.IsNullOrWhiteSpace(customer.ContactName) ? customer.Name : customer.ContactName;
+
+    private static string TelLink(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return "#";
+        }
+
+        var digits = new string(raw.Where(char.IsDigit).ToArray());
+        return string.IsNullOrWhiteSpace(digits) ? "#" : $"tel:{digits}";
+    }
+
+    private static string FirstLine(string value) =>
+        string.IsNullOrWhiteSpace(value)
+            ? "Unknown Address"
+            : value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? value;
+}

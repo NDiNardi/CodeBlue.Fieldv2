@@ -1,0 +1,235 @@
+@page "/customers/{Id:guid}"
+@attribute [Authorize(Roles = "Admin,Office")]
+@using CodeBlue.Field.App.Models
+@using CodeBlue.Field.App.Services
+@inject IFieldDataService FieldData
+
+<PageTitle>Customer</PageTitle>
+
+@if (_loading)
+{
+    <p>Loading customer...</p>
+}
+else if (_customer is null)
+{
+    <section class="section-block">
+        <h2>Customer not found</h2>
+        <p class="section-copy">The current offline snapshot does not contain this customer.</p>
+    </section>
+}
+else
+{
+    <section class="customer-detail-page">
+        <section class="section-block dashboard-header-block">
+            <div class="section-heading dashboard-header-row">
+                <div class="dashboard-header-copy">
+                    <p class="eyebrow dashboard-eyebrow">CUSTOMER INFORMATION</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="detail-panel customer-detail-panel">
+            <div class="customer-detail-heading-row">
+                <h3 class="customer-detail-heading">@StreetOnly(_customer)</h3>
+                <div class="customer-detail-heading-actions">
+                    <a class="customer-detail-action customer-detail-quick-claim" href="@($"/customers/{Id}/quick-claim")">
+                        Quick Claim
+                    </a>
+                    <a class="customer-detail-action customer-detail-heading-action" href="@MapsLink(_customer)" target="_blank" rel="noopener" aria-label="Open map">
+                        <svg class="customer-detail-action-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M15 5.25 9 3 3 5.25v15.5L9 18.5l6 2.25 6-2.25V3zm-5.25.28 4.5 1.69v11.25l-4.5-1.69zm-5.25.95 3.75-1.41v11.25L4.5 17.73zm15 11.25-3.75 1.41V7.89l3.75-1.41z"></path>
+                        </svg>
+                    </a>
+                </div>
+            </div>
+            <div class="customer-detail-divider" aria-hidden="true"></div>
+            <div class="customer-detail-grid">
+                <div class="customer-detail-info-row">
+                    <div class="detail-pair customer-detail-left-align customer-detail-column">
+                        <span>Gate Codes</span>
+                        <strong>@BlankDash(_customer.GateCodes)</strong>
+                    </div>
+                    <div class="detail-pair customer-detail-left-align customer-detail-column">
+                        <span>Animals</span>
+                        <strong>@(_customer.AnimalsPresent ? "Yes" : "No")</strong>
+                    </div>
+                </div>
+
+                <div class="customer-detail-info-row">
+                    <div class="detail-pair customer-detail-left-align customer-detail-column">
+                        <span>Contact</span>
+                        <strong>@BlankDash(_customer.ContactName)</strong>
+                    </div>
+                    <div class="detail-pair customer-detail-left-align customer-detail-column">
+                        <span>Phone</span>
+                        @if (!string.IsNullOrWhiteSpace(_customer.Phone))
+                        {
+                            <a class="customer-phone-link" href="@TelLink(_customer.Phone)">
+                                <svg class="customer-detail-action-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M6.62 10.79a15.05 15.05 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1-.24c1.12.37 2.33.56 3.59.56a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1C10.3 21 3 13.7 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.26.19 2.47.56 3.59a1 1 0 0 1-.25 1z"></path>
+                                </svg>
+                                <span>@_customer.Phone</span>
+                            </a>
+                        }
+                        else
+                        {
+                            <strong>—</strong>
+                        }
+                    </div>
+                </div>
+
+                <div class="detail-pair customer-detail-address">
+                    <span>Email</span>
+                    <strong>@BlankDash(_customer.ContactEmail)</strong>
+                </div>
+
+                <div class="customer-detail-divider" aria-hidden="true"></div>
+
+                <div class="detail-pair customer-detail-centered customer-detail-column">
+                    <span>Original Installer</span>
+                    <strong>@BlankDash(_customer.OriginalInstallerDealer)</strong>
+                </div>
+                <div class="detail-pair customer-detail-centered customer-detail-column">
+                    <span>Startup Date</span>
+                    <strong>@DisplayDate(_customer.StartupDate)</strong>
+                </div>
+            </div>
+        </section>
+
+        <section class="two-column-info customer-history-panels">
+            <section class="detail-panel">
+                <h3>Work Order History</h3>
+                <div class="data-list">
+                    @if (RelatedWorkOrders.Count == 0)
+                    {
+                        <article class="empty-card">
+                            <h3>No work orders</h3>
+                            <p>No cached work orders were found for this address.</p>
+                        </article>
+                    }
+                    else
+                    {
+                        @foreach (var workOrder in RelatedWorkOrders.Take(8))
+                        {
+                            <a class="data-card data-card-link" href="@($"/work-orders/{workOrder.Id}")">
+                                <div class="history-card-row">
+                                    <div class="history-card-main">
+                                        <div class="address-title">@DisplayDate(workOrder.CompletedOn ?? workOrder.DateSubmitted)</div>
+                                        <div class="card-subline">@ProblemText(workOrder)</div>
+                                    </div>
+                                    <div class="card-meta-stack">
+                                        <span>@workOrder.Status</span>
+                                    </div>
+                                </div>
+                            </a>
+                        }
+                    }
+                </div>
+            </section>
+
+            <section class="detail-panel">
+                <h3>Claim History</h3>
+                <div class="data-list">
+                    @if (RelatedClaims.Count == 0)
+                    {
+                        <article class="empty-card">
+                            <h3>No claims</h3>
+                            <p>No cached claims were found for this address.</p>
+                        </article>
+                    }
+                    else
+                    {
+                        @foreach (var claim in RelatedClaims.Take(8))
+                        {
+                            <a class="data-card data-card-link" href="@($"/claims/{claim.Id}")">
+                                <div class="claim-card-row" style="display:flex; align-items:flex-start; justify-content:space-between; width:100%;">
+                                    <div class="claim-card-main" style="display:flex; flex-direction:column; flex:1 1 auto; min-width:0;">
+                                        <div class="address-title">@ClaimNumber(claim)</div>
+                                        <div class="card-subline">@EquipmentLine(claim)</div>
+                                    </div>
+                                    <div class="card-meta-stack" style="display:flex; flex-direction:column; align-items:flex-end; justify-content:flex-start; text-align:right; margin-left:auto; flex:0 0 auto; white-space:nowrap;">
+                                        <span>@claim.Status</span>
+                                    </div>
+                                </div>
+                            </a>
+                        }
+                    }
+                </div>
+            </section>
+        </section>
+    </section>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private bool _loading = true;
+    private CustomerSummary? _customer;
+    private IReadOnlyList<WorkOrderSummary> _workOrders = [];
+    private IReadOnlyList<ClaimSummary> _claims = [];
+
+    private IReadOnlyList<WorkOrderSummary> RelatedWorkOrders =>
+        _workOrders.Where(x => x.CustomerId == Id).OrderByDescending(x => x.CompletedOn ?? x.DateSubmitted).ToList();
+
+    private IReadOnlyList<ClaimSummary> RelatedClaims =>
+        _claims.Where(x => x.CustomerId == Id).OrderByDescending(x => x.CompletedOn ?? x.RepairDate ?? x.FailureDate ?? DateOnly.MinValue).ToList();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        var customers = await FieldData.GetCustomersAsync();
+        _workOrders = await FieldData.GetWorkOrdersAsync();
+        _claims = await FieldData.GetClaimsAsync();
+        _customer = customers.FirstOrDefault(x => x.Id == Id);
+        _loading = false;
+    }
+
+    private static string StreetOnly(CustomerSummary customer) =>
+        !string.IsNullOrWhiteSpace(customer.Street1)
+            ? customer.Street1
+            : FirstLine(customer.Address);
+
+    private static string ProblemText(WorkOrderSummary workOrder) =>
+        string.IsNullOrWhiteSpace(workOrder.ServiceDetails) ? "No service details recorded." : workOrder.ServiceDetails;
+
+    private static string ClaimNumber(ClaimSummary claim) =>
+        string.IsNullOrWhiteSpace(claim.ClaimNumber) ? "No Claim #" : claim.ClaimNumber;
+
+    private static string EquipmentLine(ClaimSummary claim)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(claim.ComponentCode))
+        {
+            parts.Add(claim.ComponentCode);
+        }
+
+        if (!string.IsNullOrWhiteSpace(claim.IdSerialNumber))
+        {
+            parts.Add(claim.IdSerialNumber);
+        }
+
+        return parts.Count == 0 ? "No component details recorded." : string.Join("  ", parts);
+    }
+
+    private static string BlankDash(string? value) => string.IsNullOrWhiteSpace(value) ? "—" : value;
+    private static string DisplayDate(DateOnly? date) => date?.ToString("MM/dd/yyyy") ?? "—";
+
+    private static string TelLink(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return "#";
+        }
+
+        var digits = new string(raw.Where(char.IsDigit).ToArray());
+        return string.IsNullOrWhiteSpace(digits) ? "#" : $"tel:{digits}";
+    }
+
+    private static string MapsLink(CustomerSummary customer) =>
+        $"https://www.google.com/maps/search/?api=1&query={Uri.EscapeDataString(StreetOnly(customer))}";
+
+    private static string FirstLine(string value) =>
+        string.IsNullOrWhiteSpace(value)
+            ? "Unknown Address"
+            : value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? value;
+}

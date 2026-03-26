@@ -1,0 +1,393 @@
+@page "/"
+@attribute [Authorize(Roles = "Admin,Technician")]
+@using CodeBlue.Field.App.Models
+@using CodeBlue.Field.App.Services
+@inject IFieldDataService FieldData
+@inject IFieldSyncService FieldSync
+@inject IJSRuntime JS
+<PageTitle>Technician Dashboard</PageTitle>
+
+@if (_snapshot is null || _workOrders is null || _pendingChanges is null)
+{
+    <p>Loading field data...</p>
+}
+else
+{
+    <section class="section-block dashboard-header-block">
+        <div class="section-heading dashboard-header-row">
+            <div class="dashboard-header-copy">
+                <p class="eyebrow dashboard-eyebrow">Technician Dashboard</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="route-map-card">
+        <div class="route-map-head">
+            <div class="route-map-titlebar">
+                <button class="day-nav-button route-day-button" type="button" @onclick="PrevDay" aria-label="Previous day">
+                    <svg class="nav-chevron-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M14.41 7.41 9.83 12l4.58 4.59L13 18l-6-6 6-6z"></path>
+                    </svg>
+                </button>
+                <p class="route-map-title">@RouteHeading</p>
+                <button class="day-nav-button route-day-button" type="button" @onclick="NextDay" aria-label="Next day">
+                    <svg class="nav-chevron-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="m10 6 6 6-6 6-1.41-1.41L13.17 12 8.59 7.41z"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="route-map-actions">
+                <button class="day-nav-today route-today-button" type="button" @onclick="GoToday">Reset</button>
+            </div>
+        </div>
+        <div class="route-map-body">
+            <div id="cbScheduleMap" class="route-live-map"></div>
+            @if (MapStops.Count == 0)
+            {
+                <div class="empty-card route-map-empty">
+                    @if (RemainingItems.Count == 0)
+                    {
+                        <h3>No remaining stops</h3>
+                        <p>The selected day has no active work orders in the current local snapshot.</p>
+                    }
+                    else
+                    {
+                        <h3>No mappable stops</h3>
+                        <p>Remaining work orders are missing saved coordinates in the current snapshot.</p>
+                    }
+                </div>
+            }
+        </div>
+    </section>
+
+    <section class="section-block">
+        <div class="section-heading dashboard-list-heading">
+            <div>
+                <p class="eyebrow">Remaining Work Orders</p>
+            </div>
+        </div>
+
+        <div class="data-list">
+            @if (RemainingItems.Count == 0)
+            {
+                <article class="empty-card">
+                    <h3>No remaining stops</h3>
+                    <p>There are no active work orders scheduled for the selected day.</p>
+                </article>
+            }
+            else
+            {
+                @foreach (var workOrder in RemainingItems)
+                {
+                    <a class="dashboard-stop-card" href="@($"/work-orders/active/{workOrder.Id}")">
+                        <div class="stop-card-row">
+                            <div class="stop-card-main">
+                                <div class="dashboard-stop-top">
+                                    <div class="address-title">@StreetOnly(workOrder)</div>
+                                    @if (HasStopActions(workOrder))
+                                    {
+                                        <span class="dashboard-stop-inline-action">
+                                            @if (HasMapTarget(workOrder))
+                                            {
+                                                <a class="dashboard-stop-map-link"
+                                                   href="@MapLink(workOrder)"
+                                                   target="_blank"
+                                                   rel="noopener noreferrer"
+                                                   @onclick:stopPropagation="true"
+                                                   @onclick:preventDefault="false"
+                                                   aria-label="Open map">
+                                                    <svg class="dashboard-stop-map-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                                        <path d="M12 21s-5.5-5.27-5.5-10A5.5 5.5 0 1 1 17.5 11C17.5 15.73 12 21 12 21zm0-7.2A2.8 2.8 0 1 0 12 8.2a2.8 2.8 0 0 0 0 5.6z"></path>
+                                                    </svg>
+                                                </a>
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(workOrder.ServiceContactPhone))
+                                            {
+                                                <a class="dashboard-stop-phone-link"
+                                                   href="@TelLink(workOrder.ServiceContactPhone)"
+                                                   @onclick:stopPropagation="true"
+                                                   @onclick:preventDefault="false"
+                                                   aria-label="Call customer">
+                                                    <svg class="dashboard-stop-phone-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                                        <path d="M6.62 10.79a15.05 15.05 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1-.24c1.12.37 2.33.56 3.59.56a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1C10.3 21 3 13.7 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.26.19 2.47.56 3.59a1 1 0 0 1-.25 1z"></path>
+                                                    </svg>
+                                                </a>
+                                            }
+                                        </span>
+                                    }
+                                </div>
+                                <div class="card-subline card-subline-clamp">@ProblemText(workOrder)</div>
+                                @if (workOrder.HasPendingUpload)
+                                {
+                                    <span class="pill pill-alert dashboard-stop-pill">Pending sync</span>
+                                }
+                            </div>
+                        </div>
+                    </a>
+                }
+            }
+        </div>
+        <div class="my-5"></div>
+        <div>
+            <p class="eyebrow">Completed Stops</p>
+        </div>
+
+        <div class="data-list">
+            @if (CompletedItems.Count == 0)
+            {
+                <article class="empty-card">
+                    <h3>No completed stops</h3>
+                    <p>Completed stops for the selected day will appear here for quick reference.</p>
+                </article>
+            }
+            else
+            {
+                @foreach (var workOrder in CompletedItems)
+                {
+                    <a class="dashboard-stop-card dashboard-stop-card-complete" href="@($"/work-orders/history/{workOrder.Id}")">
+                        <div class="stop-card-row">
+                            <div class="stop-card-main">
+                                <div class="dashboard-stop-top">
+                                    <div class="address-title">@StreetOnly(workOrder)</div>
+                                    @if (HasStopActions(workOrder))
+                                    {
+                                        <span class="dashboard-stop-inline-action">
+                                            @if (HasMapTarget(workOrder))
+                                            {
+                                                <a class="dashboard-stop-map-link"
+                                                   href="@MapLink(workOrder)"
+                                                   target="_blank"
+                                                   rel="noopener noreferrer"
+                                                   @onclick:stopPropagation="true"
+                                                   @onclick:preventDefault="false"
+                                                   aria-label="Open map">
+                                                    <svg class="dashboard-stop-map-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                                        <path d="M12 21s-5.5-5.27-5.5-10A5.5 5.5 0 1 1 17.5 11C17.5 15.73 12 21 12 21zm0-7.2A2.8 2.8 0 1 0 12 8.2a2.8 2.8 0 0 0 0 5.6z"></path>
+                                                    </svg>
+                                                </a>
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(workOrder.ServiceContactPhone))
+                                            {
+                                                <a class="dashboard-stop-phone-link"
+                                                   href="@TelLink(workOrder.ServiceContactPhone)"
+                                                   @onclick:stopPropagation="true"
+                                                   @onclick:preventDefault="false"
+                                                   aria-label="Call customer">
+                                                    <svg class="dashboard-stop-phone-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                                        <path d="M6.62 10.79a15.05 15.05 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1-.24c1.12.37 2.33.56 3.59.56a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1C10.3 21 3 13.7 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.26.19 2.47.56 3.59a1 1 0 0 1-.25 1z"></path>
+                                                    </svg>
+                                                </a>
+                                            }
+                                        </span>
+                                    }
+                                </div>
+                                <div class="card-subline card-subline-clamp">@ProblemText(workOrder)</div>
+                            </div>
+                        </div>
+                    </a>
+                }
+            }
+        </div>
+    </section>
+}
+
+@code {
+    private SyncSnapshot? _snapshot;
+    private IReadOnlyList<WorkOrderSummary>? _workOrders;
+    private IReadOnlyList<PendingChange>? _pendingChanges;
+    private DateOnly _selectedDate = DateOnly.FromDateTime(DateTime.Today);
+    private string? _lastMapRenderKey;
+    private bool _mapAssetsReady;
+
+    private const double DefaultCenterLat = 36.175052;
+    private const double DefaultCenterLng = -115.156251;
+    private static readonly TimeSpan AutoRefreshThreshold = TimeSpan.FromMinutes(30);
+
+    private IReadOnlyList<WorkOrderSummary> ForSelectedDay =>
+        (_workOrders ?? [])
+            .Where(x => (x.ScheduledDate ?? x.DateSubmitted) == _selectedDate)
+            .OrderBy(x => IsCompleted(x.Status))
+            .ThenBy(x => StreetOnly(x))
+            .ToList();
+
+    private IReadOnlyList<WorkOrderSummary> RemainingItems =>
+        ForSelectedDay.Where(x => !IsCompleted(x.Status)).ToList();
+
+    private IReadOnlyList<WorkOrderSummary> CompletedItems =>
+        ForSelectedDay.Where(x => IsCompleted(x.Status)).ToList();
+
+    private IReadOnlyList<WorkOrderSummary> MapStops =>
+        RemainingItems.Where(x => x.Latitude is not null && x.Longitude is not null).ToList();
+
+    private string RouteHeading =>
+        _selectedDate == DateOnly.FromDateTime(DateTime.Today)
+            ? "Today"
+            : _selectedDate.ToString("MM/dd/yyyy");
+
+    protected override async Task OnInitializedAsync()
+    {
+        await EnsureFreshSnapshotAsync();
+        await ReloadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await RenderMapAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _snapshot = await FieldData.GetSyncSnapshotAsync();
+        _workOrders = await FieldData.GetWorkOrdersAsync();
+        _pendingChanges = await FieldData.GetPendingChangesAsync();
+        _lastMapRenderKey = null;
+    }
+
+    private async Task EnsureFreshSnapshotAsync()
+    {
+        try
+        {
+            var snapshot = await FieldData.GetSyncSnapshotAsync();
+            var needsRefresh = !snapshot.HasCompletedSync
+                || snapshot.LastSuccessfulSync == default
+                || DateTimeOffset.UtcNow - snapshot.LastSuccessfulSync > AutoRefreshThreshold;
+
+            if (!needsRefresh)
+            {
+                return;
+            }
+
+            await FieldSync.PullLatestAsync();
+        }
+        catch
+        {
+        }
+    }
+
+    private void PrevDay() => _selectedDate = _selectedDate.AddDays(-1);
+    private void NextDay() => _selectedDate = _selectedDate.AddDays(1);
+    private void GoToday() => _selectedDate = DateOnly.FromDateTime(DateTime.Today);
+
+    private async Task RenderMapAsync()
+    {
+        if (MapStops.Count == 0)
+        {
+            await EnsureMapAssetsAsync();
+
+            var emptyMapKey = $"empty:{_selectedDate:yyyy-MM-dd}";
+            if (_lastMapRenderKey == emptyMapKey)
+            {
+                return;
+            }
+
+            _lastMapRenderKey = emptyMapKey;
+            await JS.InvokeVoidAsync("cbScheduleMap.renderPins", Array.Empty<DashboardMapPin>(), DefaultCenterLat, DefaultCenterLng);
+            await JS.InvokeVoidAsync("cbScheduleMap.invalidate");
+            return;
+        }
+
+        await EnsureMapAssetsAsync();
+
+        var mapKey = string.Join("|", MapStops.Select((stop, index) =>
+            $"{stop.Id}:{index + 1}:{stop.Latitude}:{stop.Longitude}:{stop.Address}:{stop.Status}:{_selectedDate:yyyy-MM-dd}"));
+
+        if (_lastMapRenderKey == mapKey)
+        {
+            return;
+        }
+
+        _lastMapRenderKey = mapKey;
+
+        var pins = MapStops
+            .Select((stop, index) => new DashboardMapPin(
+                stop.Id,
+                stop.Latitude,
+                stop.Longitude,
+                stop.Address,
+                StreetOnly(stop),
+                $"day:{_selectedDate:yyyy-MM-dd}",
+                index + 1,
+                null,
+                ProblemText(stop),
+                false,
+                _selectedDate.ToString("ddd")))
+            .ToList();
+
+        await JS.InvokeVoidAsync("cbScheduleMap.renderPins", pins, DefaultCenterLat, DefaultCenterLng);
+        await JS.InvokeVoidAsync("cbScheduleMap.invalidate");
+    }
+
+    private async Task EnsureMapAssetsAsync()
+    {
+        if (_mapAssetsReady)
+        {
+            return;
+        }
+
+        await JS.InvokeVoidAsync("codeBlue.assets.ensureMaps");
+        _mapAssetsReady = true;
+    }
+
+    private static bool IsCompleted(string status) =>
+        status.Equals("Completed", StringComparison.OrdinalIgnoreCase);
+
+    private static string StreetOnly(WorkOrderSummary workOrder) =>
+        !string.IsNullOrWhiteSpace(workOrder.Street1)
+            ? workOrder.Street1
+            : FirstLine(string.IsNullOrWhiteSpace(workOrder.Address) ? workOrder.CustomerName : workOrder.Address);
+
+    private static string ProblemText(WorkOrderSummary workOrder) =>
+        string.IsNullOrWhiteSpace(workOrder.ServiceDetails) ? "No service details recorded." : workOrder.ServiceDetails;
+
+    private static string DisplayDate(DateOnly? date) => date?.ToString("MM/dd/yyyy") ?? "—";
+
+    private static string TelLink(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return "#";
+        }
+
+        var digits = new string(raw.Where(char.IsDigit).ToArray());
+        return string.IsNullOrWhiteSpace(digits) ? "#" : $"tel:{digits}";
+    }
+
+    private static bool HasMapTarget(WorkOrderSummary workOrder) =>
+        workOrder.Latitude is not null && workOrder.Longitude is not null
+        || !string.IsNullOrWhiteSpace(workOrder.Address)
+        || !string.IsNullOrWhiteSpace(workOrder.Street1);
+
+    private static bool HasStopActions(WorkOrderSummary workOrder) =>
+        HasMapTarget(workOrder) || !string.IsNullOrWhiteSpace(workOrder.ServiceContactPhone);
+
+    private static string MapLink(WorkOrderSummary workOrder)
+    {
+        if (workOrder.Latitude is not null && workOrder.Longitude is not null)
+        {
+            return $"https://www.google.com/maps/search/?api=1&query={workOrder.Latitude.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)},{workOrder.Longitude.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+        }
+
+        var query = string.IsNullOrWhiteSpace(workOrder.Address)
+            ? string.Join(", ", new[] { workOrder.Street1, workOrder.City }.Where(x => !string.IsNullOrWhiteSpace(x)))
+            : workOrder.Address;
+
+        return $"https://www.google.com/maps/search/?api=1&query={Uri.EscapeDataString(query)}";
+    }
+    private static string FirstLine(string value) =>
+        string.IsNullOrWhiteSpace(value)
+            ? "Unknown Address"
+            : value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? value;
+
+    private sealed record DashboardMapPin(
+        Guid Id,
+        decimal? Lat,
+        decimal? Lng,
+        string Address,
+        string Label,
+        string DayKey,
+        int? Seq,
+        string? Badge,
+        string? ServiceDescription,
+        bool IsUnscheduled,
+        string? RouteDayBadge);
+}

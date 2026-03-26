@@ -1,0 +1,21 @@
+@using CodeBlue.Field.App.Models
+
+<section class="status-strip">
+    <div>
+        <div class="status-label">Last Sync</div>
+        <div class="status-value">@Snapshot.LastSuccessfulSync.LocalDateTime.ToString("g")</div>
+    </div>
+    <div>
+    <div class="status-label">Pending</div>
+        <div class="status-value">@Snapshot.PendingUploadCount</div>
+    </div>
+    <div>
+        <div class="status-label">Mode</div>
+        <div class="status-value">@(Snapshot.IsOfflineModeEnabled ? "Offline Ready" : "Online Only")</div>
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired]
+    public required SyncSnapshot Snapshot { get; set; }
+}

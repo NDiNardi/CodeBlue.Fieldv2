@@ -1,0 +1,56 @@
+name: Build and deploy Blazor WebAssembly app to Azure Web App - CodeBlueField
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET Core
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.x'
+
+      - name: Restore
+        run: dotnet restore "CodeBlue.Field.App/CodeBlue.Field.App.csproj"
+
+      - name: Build
+        run: dotnet build "CodeBlue.Field.App/CodeBlue.Field.App.csproj" --configuration Release --no-restore
+
+      - name: Publish
+        run: dotnet publish "CodeBlue.Field.App/CodeBlue.Field.App.csproj" -c Release -o "${{env.DOTNET_ROOT}}/fieldapp" --no-build
+
+      - name: Upload artifact for deployment job
+        uses: actions/upload-artifact@v4
+        with:
+          name: field-app
+          path: ${{env.DOTNET_ROOT}}/fieldapp
+
+  deploy:
+    runs-on: windows-latest
+    needs: build
+    permissions:
+      contents: read
+
+    steps:
+      - name: Download artifact from build job
+        uses: actions/download-artifact@v4
+        with:
+          name: field-app
+
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: 'CodeBlueField'
+          slot-name: 'Production'
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: .

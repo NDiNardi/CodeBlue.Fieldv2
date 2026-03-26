@@ -1,0 +1,436 @@
+@page "/claims/{Id:guid}"
+@page "/claims/active/{Id:guid}"
+@attribute [Authorize(Roles = "Admin,Office,Technician")]
+@using CodeBlue.Field.App.Models
+@using CodeBlue.Field.App.Services
+@using CodeBlue.Field.App.Util
+@inject IFieldDataService FieldData
+@inject NavigationManager Nav
+@inject HttpClient Http
+
+<PageTitle>Claim</PageTitle>
+
+@if (_loading)
+{
+    <p>Loading claim...</p>
+}
+else if (_claim is null)
+{
+    <section class="section-block">
+        <h2>Claim not found</h2>
+        <p class="section-copy">The current offline snapshot does not contain this claim.</p>
+    </section>
+}
+else
+{
+    @if (_claim.HasPendingUpload)
+    {
+        <div class="sync-result">
+            <strong>PENDING SYNC</strong>
+        </div>
+    }
+
+    @if (IsHistoricView)
+    {
+        <section class="section-block dashboard-header-block">
+            <div class="section-heading dashboard-header-row">
+                <div class="dashboard-header-copy">
+                    <p class="eyebrow dashboard-eyebrow">CLAIM</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="detail-panel claim-history-panel">
+            <div class="claim-history-address-hero">
+                <h2 class="claim-history-address-title">@ClaimStreet(_claim)</h2>
+                @if (HasAnyValue(ClaimCity(_claim), ClaimState(_claim), ClaimZip(_claim)))
+                {
+                    <div class="claim-history-address-meta">
+                        @if (ClaimCity(_claim) != "—")
+                        {
+                            <span>@ClaimCity(_claim)</span>
+                        }
+                        @if (ClaimState(_claim) != "—")
+                        {
+                            <span>@ClaimState(_claim)</span>
+                        }
+                        @if (ClaimZip(_claim) != "—")
+                        {
+                            <span>@ClaimZip(_claim)</span>
+                        }
+                    </div>
+                }
+            </div>
+
+            <section class="claim-history-statusbar">
+                <div class="claim-history-status-copy">
+                    <span>Status:</span>
+                    <strong>@BlankDash(_claim.Status)</strong>
+                </div>
+                @if (_claim.CustomerId is Guid customerId)
+                {
+                    <a class="claim-history-customer-link" href="@($"/customers/{customerId}")">
+                        <span>View Customer</span>
+                        <svg class="claim-history-customer-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm0 2c-3.33 0-6 1.79-6 4v1h12v-1c0-2.21-2.67-4-6-4z"></path>
+                        </svg>
+                    </a>
+                }
+            </section>
+
+            <div class="claim-detail-section">
+                <h3 class="claim-detail-section-title">1. Claim Information</h3>
+                <div class="claim-history-row claim-history-row-two">
+                    <div class="detail-pair claim-history-pair">
+                        <span>Claim Number</span>
+                        <strong>@ClaimNumber(_claim)</strong>
+                    </div>
+                    <div class="detail-pair claim-history-pair">
+                        <span>Address</span>
+                        <strong class="claim-history-address-value">
+                            <span>@ClaimStreet(_claim)</span>
+                            <span>@ClaimCity(_claim), @ClaimState(_claim) @ClaimZip(_claim)</span>
+                        </strong>
+                    </div>
+                </div>
+                <div class="claim-history-row claim-history-row-two">
+                    <div class="detail-pair claim-history-pair">
+                        <span>Job/Customer Name</span>
+                        <strong class="claim-history-inline-value">
+                            <svg class="claim-history-inline-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm0 2c-3.33 0-6 1.79-6 4v1h12v-1c0-2.21-2.67-4-6-4z"></path>
+                            </svg>
+                            <span>@BlankDash(_claim.ContactName)</span>
+                        </strong>
+                    </div>
+                    <div class="detail-pair claim-history-pair">
+                        <span>Phone</span>
+                        <strong class="claim-history-inline-value">
+                            <svg class="claim-history-inline-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M6.62 10.79a15.46 15.46 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1-.24 11.72 11.72 0 0 0 3.69.59 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.47a1 1 0 0 1 1 1 11.72 11.72 0 0 0 .59 3.69 1 1 0 0 1-.24 1z"></path>
+                            </svg>
+                            <span>@FmtPhone(_claim.ContactPhone)</span>
+                        </strong>
+                    </div>
+                </div>
+                <div class="claim-history-row claim-history-row-two">
+                    <div class="detail-pair claim-history-pair">
+                        <span>Install Date</span>
+                        <strong>@DisplayDate(_claim.OriginalInstallationDate)</strong>
+                    </div>
+                    <div class="detail-pair claim-history-pair">
+                        <span>Original Installer</span>
+                        <strong>@BlankDash(_claim.OriginalInstallerDealer)</strong>
+                    </div>
+                </div>
+            </div>
+
+            <div class="claim-history-divider" aria-hidden="true"></div>
+
+            <div class="claim-detail-section">
+                <h3 class="claim-detail-section-title">2. Product &amp; Repair Information</h3>
+                <div class="claim-history-row claim-history-row-three">
+                    <div class="detail-pair claim-history-pair">
+                        <span>Install Date</span>
+                        <strong>@DisplayDate(_claim.OriginalInstallationDate)</strong>
+                    </div>
+                    <div class="detail-pair claim-history-pair">
+                        <span>Failure Date</span>
+                        <strong>@DisplayDate(_claim.FailureDate)</strong>
+                    </div>
+                    <div class="detail-pair claim-history-pair">
+                        <span>Repair Date</span>
+                        <strong>@DisplayDate(_claim.RepairDate)</strong>
+                    </div>
+                </div>
+                <div class="claim-history-row claim-history-row-three">
+                    <div class="detail-pair claim-history-pair">
+                        <span>Comp. Code</span>
+                        <strong>@BlankDash(_claim.ComponentCode)</strong>
+                    </div>
+                    <div class="detail-pair claim-history-pair">
+                        <span>Product</span>
+                        <strong>@BlankDash(_claim.Product)</strong>
+                    </div>
+                    <div class="detail-pair claim-history-pair">
+                        <span>Model Number</span>
+                        <strong>@BlankDash(_claim.ModelNumber)</strong>
+                    </div>
+                </div>
+                <div class="claim-history-row claim-history-row-two">
+                    <div class="detail-pair claim-history-pair">
+                        <span>ID/Serial #</span>
+                        <strong>@BlankDash(_claim.IdSerialNumber)</strong>
+                    </div>
+                    <div class="detail-pair claim-history-pair">
+                        <span>Acc. / Comp. Serial #</span>
+                        <strong>@BlankDash(_claim.ComponentSerialNumber)</strong>
+                    </div>
+                </div>
+                <div class="claim-history-notes">
+                    <div class="detail-pair claim-history-pair claim-history-pair-full">
+                        <span>Problem/ Complaint Reported:</span>
+                        <strong>@NotesOrFallback(_claim.ProblemComplaintReported)</strong>
+                    </div>
+                    <div class="detail-pair claim-history-pair claim-history-pair-full">
+                        <span>Problem Found:</span>
+                        <strong>@NotesOrFallback(_claim.ProblemFound)</strong>
+                    </div>
+                    <div class="detail-pair claim-history-pair claim-history-pair-full">
+                        <span>Repairs Performed:</span>
+                        <strong>@NotesOrFallback(_claim.RepairsPerformed)</strong>
+                    </div>
+                </div>
+            </div>
+
+            <div class="claim-history-divider" aria-hidden="true"></div>
+
+            <div class="claim-detail-section">
+                <h3 class="claim-detail-section-title">3. Code Blue Information</h3>
+                <div class="claim-history-row claim-history-row-three">
+                    <div class="detail-pair claim-history-pair">
+                        <span>Filed On</span>
+                        <strong>@BlankDash(null)</strong>
+                    </div>
+                    <div class="detail-pair claim-history-pair">
+                        <span>Completed By</span>
+                        <strong>@BlankDash(_claim.CompletedBy)</strong>
+                    </div>
+                    <div class="detail-pair claim-history-pair">
+                        <span>Completed Date</span>
+                        <strong>@DisplayDate(_claim.CompletedOn)</strong>
+                    </div>
+                </div>
+            </div>
+        </section>
+    }
+    else
+    {
+        <section class="claim-active-shell">
+            <section class="section-block dashboard-header-block">
+                <div class="section-heading dashboard-header-row">
+                    <div class="dashboard-header-copy">
+                        <p class="eyebrow dashboard-eyebrow">NEW WARRANTY CLAIM</p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="detail-panel claim-active-panel">
+                <div class="claim-active-address-hero">
+                    <h2 class="claim-active-address-title">@ClaimStreet(_claim)</h2>
+                    @if (HasAnyValue(ClaimCity(_claim), ClaimState(_claim), ClaimZip(_claim)))
+                    {
+                        <div class="claim-active-address-meta">
+                            @if (ClaimCity(_claim) != "—")
+                            {
+                                <span>@ClaimCity(_claim)</span>
+                            }
+                            @if (ClaimState(_claim) != "—")
+                            {
+                                <span>@ClaimState(_claim)</span>
+                            }
+                            @if (ClaimZip(_claim) != "—")
+                            {
+                                <span>@ClaimZip(_claim)</span>
+                            }
+                        </div>
+                    }
+                </div>
+
+                <div class="claim-active-topbar">
+                    <div class="claim-active-actions">
+                        @if (LinkedWorkOrder is not null)
+                        {
+                            <a class="claim-active-inline-link" href="@($"/work-orders/{LinkedWorkOrder.Id}")">
+                                <svg class="claim-active-inline-link-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M9 5h6a1 1 0 0 1 .8.4l3 4A1 1 0 0 1 19 10v8a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-8a1 1 0 0 1 .2-.6l3-4A1 1 0 0 1 9 5zm.5 2L7.5 9.67V17h9v-7.33L14.5 7zm.5 4h4v2h-4v-2z"></path>
+                                </svg>
+                                <span>View Work Order</span>
+                            </a>
+                        }
+                        @if (_claim.CustomerId is Guid activeCustomerId)
+                        {
+                            <a class="claim-active-inline-link claim-active-inline-link-customer" href="@($"/customers/{activeCustomerId}")">
+                                <span>View Customer</span>
+                                <svg class="claim-active-inline-link-icon claim-active-inline-link-icon-customer" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm0 2c-3.33 0-6 1.79-6 4v1h12v-1c0-2.21-2.67-4-6-4z"></path>
+                                </svg>
+                            </a>
+                        }
+                    </div>
+                </div>
+
+                <div class="claim-active-block">
+                    <h3 class="claim-active-section-title">1. Owner Information</h3>
+                    <div class="claim-active-form-grid claim-active-grid-two">
+                        @ReadonlyClaimField("Job/Customer Name", Val(_claim.ContactName))
+                        @ReadonlyClaimField("Phone", FmtPhone(_claim.ContactPhone))
+                    </div>
+                    <div class="claim-active-form-grid claim-active-grid-single">
+                        @ReadonlyClaimField("Address", ClaimStreet(_claim))
+                    </div>
+                    <div class="claim-active-form-grid claim-active-grid-three">
+                        @ReadonlyClaimField("City", ClaimCity(_claim))
+                        @ReadonlyClaimField("State", ClaimState(_claim))
+                        @ReadonlyClaimField("Zip Code", ClaimZip(_claim))
+                    </div>
+                </div>
+
+                <div class="claim-active-block">
+                    <h3 class="claim-active-section-title">2. Original Installer/Dealer</h3>
+                    <div class="claim-active-form-grid claim-active-grid-single">
+                        @ReadonlyClaimField("Installer/Dealer Name", Val(_claim.OriginalInstallerDealer))
+                    </div>
+                </div>
+
+                <div class="claim-active-block">
+                    <h3 class="claim-active-section-title">3. Product &amp; Repair Information</h3>
+                    <div class="claim-active-form-grid claim-active-grid-three">
+                        @ReadonlyClaimField("Original Installation Date", DisplayDate(_claim.OriginalInstallationDate))
+                        @ReadonlyClaimField("Failure Date", DisplayDate(_claim.FailureDate))
+                        @ReadonlyClaimField("Repair Date", DisplayDate(_claim.RepairDate))
+                    </div>
+                    <div class="claim-active-form-grid claim-active-grid-single">
+                        @ReadonlyClaimField("Notes for Website", NotesOrFallback(_claim.Notes), true)
+                    </div>
+
+                    <div class="claim-active-image-grid">
+                        <div>
+                            <div class="claim-active-image-title">Image 1 / ID / Serial #</div>
+                            <div class="claim-active-image-box">
+                                @if (!string.IsNullOrWhiteSpace(_claim.SerialNumber1StorageKey))
+                                {
+                                    <img class="claim-active-image-fill" src="@ClaimFileUrl(Http.BaseAddress, _claim.SerialNumber1StorageKey)" alt="Serial number photo 1" />
+                                }
+                                else
+                                {
+                                    <div class="claim-active-image-placeholder">
+                                        <div class="claim-active-image-serial">@BlankDash(_claim.IdSerialNumber)</div>
+                                        <div>IMAGE</div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+
+                        <div>
+                            <div class="claim-active-image-title">Image 2 / Component Serial #</div>
+                            <div class="claim-active-image-box">
+                                @if (!string.IsNullOrWhiteSpace(_claim.SerialNumber2StorageKey))
+                                {
+                                    <img class="claim-active-image-fill" src="@ClaimFileUrl(Http.BaseAddress, _claim.SerialNumber2StorageKey)" alt="Serial number photo 2" />
+                                }
+                                else
+                                {
+                                    <div class="claim-active-image-placeholder">
+                                        <div class="claim-active-image-serial">@BlankDash(_claim.ComponentSerialNumber)</div>
+                                        <div>IMAGE</div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </section>
+    }
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private bool _loading = true;
+    private ClaimSummary? _claim;
+    private IReadOnlyList<WorkOrderSummary> _workOrders = [];
+
+    private WorkOrderSummary? LinkedWorkOrder =>
+        _claim?.WorkOrderId is Guid workOrderId ? _workOrders.FirstOrDefault(x => x.Id == workOrderId) : null;
+
+    private bool IsHistoricView => !Nav.Uri.Contains("/claims/active/", StringComparison.OrdinalIgnoreCase);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        var claims = await FieldData.GetClaimsAsync();
+        _workOrders = await FieldData.GetWorkOrdersAsync();
+        _claim = claims.FirstOrDefault(x => x.Id == Id);
+        _loading = false;
+    }
+
+    private RenderFragment ReadonlyClaimField(string label, string value, bool multiline = false) => @<div class="claim-active-field">
+        <div class="claim-active-label">@label</div>
+        <div class="@(multiline ? "claim-active-value-box claim-active-value-box-multi" : "claim-active-value-box")">@value</div>
+    </div>;
+
+    private static string StreetOnly(ClaimSummary claim) =>
+        string.IsNullOrWhiteSpace(claim.ServiceAddress) ? claim.CustomerName : claim.ServiceAddress;
+
+    private static string ClaimStreet(ClaimSummary claim) => ParseAddress(claim.ServiceAddress).street;
+    private static string ClaimCity(ClaimSummary claim) => ParseAddress(claim.ServiceAddress).city;
+    private static string ClaimState(ClaimSummary claim) => ParseAddress(claim.ServiceAddress).state;
+    private static string ClaimZip(ClaimSummary claim) => ParseAddress(claim.ServiceAddress).zip;
+
+    private static string ClaimNumber(ClaimSummary claim) =>
+        string.IsNullOrWhiteSpace(claim.ClaimNumber) ? "No Claim #" : claim.ClaimNumber;
+
+    private static string ClaimFileUrl(Uri? baseAddress, string storageKey) =>
+        ClaimImageUtil.ResolveImageUrl(baseAddress, storageKey);
+
+    private static string Val(string? value) => string.IsNullOrWhiteSpace(value) ? "—" : value;
+    private static bool HasAnyValue(params string[] values)
+        => values.Any(v => !string.IsNullOrWhiteSpace(v) && v != "—");
+
+    private static string FmtPhone(string? phone)
+    {
+        var digits = new string((phone ?? string.Empty).Where(char.IsDigit).ToArray());
+        if (digits.Length == 11 && digits.StartsWith("1"))
+        {
+            digits = digits[1..];
+        }
+
+        if (digits.Length == 10)
+        {
+            return $"({digits[..3]}) {digits.Substring(3, 3)}-{digits[6..]}";
+        }
+
+        return string.IsNullOrWhiteSpace(phone) ? "—" : phone;
+    }
+
+    private static (string street, string city, string state, string zip) ParseAddress(string? address)
+    {
+        if (string.IsNullOrWhiteSpace(address))
+        {
+            return ("—", "—", "—", "—");
+        }
+
+        if (!address.Contains(','))
+        {
+            return (Val(address.Trim()), "—", "—", "—");
+        }
+
+        var parts = address.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        var street = parts.Length > 0 ? parts[0] : address;
+        var city = parts.Length > 1 ? parts[1] : "—";
+        var state = "—";
+        var zip = "—";
+
+        if (parts.Length > 2)
+        {
+            var stateZip = parts[2].Split(' ', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+            if (stateZip.Length > 0)
+            {
+                state = stateZip[0];
+            }
+
+            if (stateZip.Length > 1)
+            {
+                zip = stateZip[^1];
+            }
+        }
+
+        return (Val(street), Val(city), Val(state), Val(zip));
+    }
+
+    private static string BlankDash(string? value) => string.IsNullOrWhiteSpace(value) ? "—" : value;
+    private static string NotesOrFallback(string? value) => string.IsNullOrWhiteSpace(value) ? "—" : value;
+    private static string DisplayDate(DateOnly? date) => date?.ToString("MM/dd/yyyy") ?? "—";
+}

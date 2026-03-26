@@ -1,0 +1,165 @@
+@page "/login"
+@attribute [AllowAnonymous]
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@layout PublicLayout
+@inject NavigationManager Nav
+@inject FieldAuthenticationStateProvider AuthStateProvider
+@inject IFieldSyncService FieldSync
+
+<PageTitle>Login</PageTitle>
+
+<section class="login-wrap">
+    <section class="account-card login-card">
+        <div class="account-header login-header">
+            <img src="/images/app/CodeBlueLightMode.png" alt="CodeBlue" class="login-logo" />
+            <h1>Employee Login</h1>
+            <p>Use your existing server login.</p>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_errorMessage))
+        {
+            <div class="validation-banner">@_errorMessage</div>
+        }
+
+        <EditForm Model="_model" OnValidSubmit="LoginAsync">
+            <DataAnnotationsValidator />
+
+            <section class="detail-panel">
+                <div class="claim-form-grid">
+                    <label class="form-field form-field-full">
+                        <span>Username</span>
+                        <InputText @bind-Value="_model.Username" autocomplete="username" />
+                    </label>
+
+                    <label class="form-field form-field-full">
+                        <span>Password</span>
+                        <InputText @bind-Value="_model.Password" type="password" autocomplete="current-password" />
+                    </label>
+                </div>
+
+                <div class="form-actions">
+                    <button class="sync-button cb-login-btn" type="submit" disabled="@_saving">
+                        @(_saving ? "Signing In..." : "Sign In")
+                    </button>
+                </div>
+            </section>
+        </EditForm>
+    </section>
+</section>
+
+@code {
+    private LoginModel _model = new();
+    private bool _saving;
+    private string? _errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        if (authState.User.Identity?.IsAuthenticated == true)
+        {
+            NavigateAfterLogin(authState.User);
+        }
+    }
+
+    private async Task LoginAsync()
+    {
+        _errorMessage = null;
+        _saving = true;
+
+        try
+        {
+            var result = await AuthStateProvider.SignInAsync(_model.Username ?? string.Empty, _model.Password ?? string.Empty);
+            if (!result.Success)
+            {
+                _errorMessage = string.IsNullOrWhiteSpace(result.Message) ? "Sign in failed." : result.Message;
+                return;
+            }
+
+            if (result.Session.MustChangePassword)
+            {
+                Nav.NavigateTo("/my-account", replace: true);
+                return;
+            }
+
+            try
+            {
+                await FieldSync.PullLatestAsync();
+            }
+            catch
+            {
+            }
+
+            NavigateAfterLogin(result.Session.RolesCsv);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void NavigateAfterLogin(ClaimsPrincipal user)
+        => NavigateAfterLogin(string.Join(',', user.Claims.Where(c => c.Type == ClaimTypes.Role).Select(c => c.Value)));
+
+    private void NavigateAfterLogin(string? rolesCsv = null)
+    {
+        var uri = Nav.ToAbsoluteUri(Nav.Uri);
+        var returnUrl = GetQueryValue(uri.Query, "returnUrl") ?? GetDefaultRoute(rolesCsv);
+
+        if (string.IsNullOrWhiteSpace(returnUrl) || !returnUrl.StartsWith('/'))
+        {
+            returnUrl = GetDefaultRoute(rolesCsv);
+        }
+
+        if (string.Equals(returnUrl, "/login", StringComparison.OrdinalIgnoreCase))
+        {
+            returnUrl = GetDefaultRoute(rolesCsv);
+        }
+
+        Nav.NavigateTo(returnUrl, replace: true);
+    }
+
+    private static string GetDefaultRoute(string? rolesCsv)
+    {
+        var roles = (rolesCsv ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (roles.Contains("Office") && !roles.Contains("Technician"))
+        {
+            return "/work-orders";
+        }
+
+        return "/";
+    }
+
+    private static string? GetQueryValue(string queryString, string key)
+    {
+        if (string.IsNullOrWhiteSpace(queryString))
+        {
+            return null;
+        }
+
+        foreach (var pair in queryString.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = pair.Split('=', 2);
+            if (!string.Equals(Uri.UnescapeDataString(parts[0]), key, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            return parts.Length > 1 ? Uri.UnescapeDataString(parts[1]) : string.Empty;
+        }
+
+        return null;
+    }
+
+    private sealed class LoginModel
+    {
+        [Required]
+        public string? Username { get; set; }
+
+        [Required]
+        public string? Password { get; set; }
+    }
+}

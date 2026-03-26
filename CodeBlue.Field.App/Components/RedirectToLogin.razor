@@ -1,0 +1,30 @@
+@using System.Security.Claims
+@inject NavigationManager Nav
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            Nav.NavigateTo(GetDefaultRoute(user), replace: true);
+            return;
+        }
+
+        var relative = Nav.ToBaseRelativePath(Nav.Uri);
+        var returnUrl = string.IsNullOrWhiteSpace(relative) ? "/" : $"/{relative}";
+        Nav.NavigateTo($"/login?returnUrl={Uri.EscapeDataString(returnUrl)}", replace: true);
+    }
+
+    private static string GetDefaultRoute(ClaimsPrincipal user)
+    {
+        if (user.IsInRole("Office") && !user.IsInRole("Technician"))
+        {
+            return "/work-orders";
+        }
+
+        return "/";
+    }
+}

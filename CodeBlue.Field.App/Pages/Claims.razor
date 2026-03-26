@@ -1,0 +1,134 @@
+@page "/claims"
+@attribute [Authorize(Roles = "Admin,Office,Technician")]
+@using CodeBlue.Field.App.Models
+@using CodeBlue.Field.App.Services
+@inject IFieldDataService FieldData
+
+<PageTitle>Claims</PageTitle>
+
+<section class="section-block dashboard-header-block">
+    <div class="section-heading dashboard-header-row">
+        <div class="dashboard-header-copy">
+            <p class="eyebrow dashboard-eyebrow">Claims</p>
+        </div>
+    </div>
+</section>
+
+@if (_claims is null)
+{
+    <p>Loading claims...</p>
+}
+else
+{
+    <section class="section-block">
+        <div class="claim-toggle-row">
+            <button class="@ToggleClass(_showLiveClaims)" type="button" @onclick="() => _showLiveClaims = true">New</button>
+            <button class="@ToggleClass(!_showLiveClaims)" type="button" @onclick="() => _showLiveClaims = false">History</button>
+        </div>
+        <div class="toolbar-row">
+            <label class="search-box search-box-full">
+                <input @bind="_search" @bind:event="oninput" placeholder="Search address, claim #, component, model, or serial" />
+            </label>
+        </div>
+        <div class="data-list">
+            @if (VisibleClaims.Count == 0)
+            {
+                <article class="empty-card">
+                    <h3>No claims in this view</h3>
+                    <p>The current search and claim status selection returned no results.</p>
+                </article>
+            }
+            else
+            {
+                @foreach (var claim in VisibleClaims)
+                {
+                    <a class="data-card data-card-link @(IsLiveClaimStatus(claim.Status) ? string.Empty : "data-card-muted")" href="@ClaimRoute(claim)">
+                        <div class="claim-card-shell" style="width:100%;">
+                            <div class="claim-card-top" style="display:grid; grid-template-columns:minmax(0, 1fr) auto; align-items:start; column-gap:0.55rem; width:100%;">
+                                <div class="claim-card-copy" style="min-width:0;">
+                                    <div class="address-title">@StreetOnly(claim)</div>
+                                </div>
+                                <div class="claim-card-corner" style="justify-self:end; text-align:right; white-space:nowrap;">
+                                    <span class="claim-card-date-label">@DisplayDate(claim.RepairDate)</span>
+                                </div>
+                            </div>
+                            <div class="claim-card-copy">
+                                <div class="card-subline card-subline-clamp card-subline-single">@EquipmentLine(claim)</div>
+                            </div>
+                        </div>
+                    </a>
+                }
+            }
+        </div>
+    </section>
+}
+
+@code {
+    private IReadOnlyList<ClaimSummary>? _claims;
+    private string _search = string.Empty;
+    private bool _showLiveClaims = true;
+
+    private IReadOnlyList<ClaimSummary> VisibleClaims =>
+        (_claims ?? [])
+            .Where(MatchesSearch)
+            .Where(c => _showLiveClaims ? IsLiveClaimStatus(c.Status) : !IsLiveClaimStatus(c.Status))
+            .OrderByDescending(c => c.CompletedOn ?? c.RepairDate ?? c.FailureDate ?? DateOnly.MinValue)
+            .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _claims = await FieldData.GetClaimsAsync();
+    }
+
+    private bool MatchesSearch(ClaimSummary claim)
+    {
+        if (string.IsNullOrWhiteSpace(_search))
+        {
+            return true;
+        }
+
+        var query = _search.Trim();
+        return Contains(claim.ServiceAddress, query)
+            || Contains(claim.Street1, query)
+            || Contains(claim.ClaimNumber, query)
+            || Contains(claim.ComponentCode, query)
+            || Contains(claim.IdSerialNumber, query)
+            || Contains(claim.ComponentSerialNumber, query)
+            || Contains(claim.ModelNumber, query)
+            || Contains(claim.CustomerName, query);
+    }
+
+    private static bool Contains(string value, string query) =>
+        !string.IsNullOrWhiteSpace(value) && value.Contains(query, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsLiveClaimStatus(string status) =>
+        status.Equals("New", StringComparison.OrdinalIgnoreCase)
+        || status.Equals("Pending", StringComparison.OrdinalIgnoreCase);
+
+    private static string StreetOnly(ClaimSummary claim) =>
+        !string.IsNullOrWhiteSpace(claim.Street1)
+            ? claim.Street1
+            : string.IsNullOrWhiteSpace(claim.ServiceAddress)
+                ? claim.CustomerName
+                : claim.ServiceAddress.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? claim.ServiceAddress;
+
+    private static string EquipmentLine(ClaimSummary claim)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(claim.ComponentCode))
+        {
+            parts.Add(claim.ComponentCode);
+        }
+
+        if (!string.IsNullOrWhiteSpace(claim.IdSerialNumber))
+        {
+            parts.Add(claim.IdSerialNumber);
+        }
+
+        return parts.Count == 0 ? "No component details recorded." : string.Join("  ", parts);
+    }
+
+    private static string DisplayDate(DateOnly? date) => date?.ToString("MM/dd/yyyy") ?? "—";
+    private static string ClaimRoute(ClaimSummary claim) => claim.Status.Equals("New", StringComparison.OrdinalIgnoreCase) ? $"/claims/active/{claim.Id}" : $"/claims/{claim.Id}";
+    private string ToggleClass(bool active) => active ? "claim-toggle active" : "claim-toggle";
+}

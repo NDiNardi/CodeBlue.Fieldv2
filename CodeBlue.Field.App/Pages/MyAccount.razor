@@ -1,0 +1,194 @@
+@page "/my-account"
+@attribute [Authorize]
+@using System.ComponentModel.DataAnnotations
+@using CodeBlue.Field.App.Models
+@using CodeBlue.Field.App.Services
+@inject IFieldAccountClient AccountClient
+
+<PageTitle>My Account</PageTitle>
+
+<section class="account-shell">
+    <section class="account-card">
+        <div class="account-header account-brand-header">
+            <img src="/images/app/CodeBlueLightMode.png" alt="CodeBlue" class="login-logo account-logo" />
+            <h1>My Account</h1>
+            <p>Review your field account details and change your password.</p>
+        </div>
+
+        @if (_loading)
+        {
+            <div class="sync-result">
+                <strong>Loading account...</strong>
+                <span>Checking your field account details.</span>
+            </div>
+        }
+        else if (_profile is null)
+        {
+            <div class="validation-banner">@(_errorMessage ?? "Could not load your account.")</div>
+        }
+        else
+        {
+            @if (_profile.MustChangePassword)
+            {
+                <div class="validation-banner">You must change your temporary password before you can access the rest of the app.</div>
+            }
+
+            <section class="detail-panel account-summary-panel">
+                <div class="detail-panel-grid">
+                    <div class="detail-pair">
+                        <span>Username</span>
+                        <strong>@_profile.Username</strong>
+                    </div>
+                    <div class="detail-pair">
+                        <span>Roles</span>
+                        <strong>@_profile.RolesCsv</strong>
+                    </div>
+                    <div class="detail-pair">
+                        <span>Created</span>
+                        <strong>@_profile.CreatedUtc.ToLocalTime().ToString("g")</strong>
+                    </div>
+                    <div class="detail-pair">
+                        <span>Password Last Changed</span>
+                        <strong>@(_profile.PasswordChangedUtc.HasValue ? _profile.PasswordChangedUtc.Value.ToLocalTime().ToString("g") : "Temporary password in use")</strong>
+                    </div>
+                </div>
+            </section>
+
+            @if (!string.IsNullOrWhiteSpace(_successMessage))
+            {
+                <div class="sync-result">
+                    <strong>@_successMessage</strong>
+                </div>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(_errorMessage))
+            {
+                <div class="validation-banner">@_errorMessage</div>
+            }
+
+            <EditForm Model="_model" OnValidSubmit="ChangePasswordAsync">
+                <DataAnnotationsValidator />
+                <ValidationSummary />
+
+                <section class="detail-panel">
+                    <div class="account-panel-heading">
+                        <strong>Change Password</strong>
+                        <span>Passwords must be at least 6 characters.</span>
+                    </div>
+
+                    <div class="claim-form-grid">
+                        <label class="form-field form-field-full">
+                            <span>Current Password</span>
+                            <InputText @bind-Value="_model.CurrentPassword" type="password" autocomplete="current-password" />
+                        </label>
+
+                        <label class="form-field form-field-full">
+                            <span>New Password</span>
+                            <InputText @bind-Value="_model.NewPassword" type="password" autocomplete="new-password" />
+                        </label>
+
+                        <label class="form-field form-field-full">
+                            <span>Confirm New Password</span>
+                            <InputText @bind-Value="_model.ConfirmPassword" type="password" autocomplete="new-password" />
+                        </label>
+                    </div>
+
+                    <div class="form-actions">
+                        <button class="sync-button cb-login-btn" type="submit" disabled="@_saving">
+                            @(_saving ? "Saving..." : "Change Password")
+                        </button>
+                    </div>
+                </section>
+            </EditForm>
+        }
+    </section>
+</section>
+
+@code {
+    private FieldAccountProfile? _profile;
+    private bool _loading = true;
+    private bool _saving;
+    private string? _successMessage;
+    private string? _errorMessage;
+    private ChangePasswordModel _model = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAccountAsync();
+    }
+
+    private async Task LoadAccountAsync()
+    {
+        _loading = true;
+        _errorMessage = null;
+
+        try
+        {
+            _profile = await AccountClient.GetProfileAsync();
+        }
+        catch (Exception ex)
+        {
+            _profile = null;
+            _errorMessage = $"Failed to load account: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task ChangePasswordAsync()
+    {
+        _successMessage = null;
+        _errorMessage = null;
+
+        if (_model.NewPassword != _model.ConfirmPassword)
+        {
+            _errorMessage = "New password and confirmation do not match.";
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            var result = await AccountClient.ChangePasswordAsync(new FieldChangePasswordRequest
+            {
+                CurrentPassword = _model.CurrentPassword,
+                NewPassword = _model.NewPassword,
+                ConfirmPassword = _model.ConfirmPassword
+            });
+
+            if (result.Success)
+            {
+                _model = new();
+                _successMessage = result.Message;
+                await LoadAccountAsync();
+            }
+            else
+            {
+                _errorMessage = result.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Password change failed: {ex.Message}";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    public sealed class ChangePasswordModel
+    {
+        [Required]
+        public string? CurrentPassword { get; set; }
+
+        [Required]
+        [MinLength(6)]
+        public string? NewPassword { get; set; }
+
+        [Required]
+        public string? ConfirmPassword { get; set; }
+    }
+}

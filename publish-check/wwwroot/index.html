@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CodeBlue</title>
+    <base href="/" />
+    <meta name="theme-color" content="#0055ff" />
+    <link rel="stylesheet" href="css/bootstrap/bootstrap.min.css" />
+    <link rel="stylesheet" href="css/app.css" />
+    <link rel="icon" type="image/png" sizes="16x16" href="icons/favicon-16x16.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="48x48" href="icons/favicon.png" />
+    <link rel="icon" type="image/x-icon" href="icons/favicon.ico" />
+    <link href="manifest.webmanifest" rel="manifest" />
+    <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png" />
+</head>
+
+<body>
+    <div id="app">
+        <svg class="loading-progress">
+            <circle r="40%" cx="50%" cy="50%" />
+            <circle r="40%" cx="50%" cy="50%" />
+        </svg>
+        <div class="loading-progress-text"></div>
+    </div>
+
+    <div id="blazor-error-ui">
+        An unhandled error has occurred.
+        <a href="" class="reload">Reload</a>
+        <a class="dismiss">🗙</a>
+    </div>
+    <script src="js/codeblue-assets.js"></script>
+    <script src="js/codeblue-file-input.js"></script>
+    <script src="js/pwa-install.js"></script>
+    <script src="_framework/blazor.webassembly.js"></script>
+    <script>
+        (function () {
+            var host = window.location.hostname;
+            var isDevHost =
+                host === 'localhost' ||
+                host === '127.0.0.1' ||
+                host === '172.16.10.123';
+
+            if (!isDevHost && 'serviceWorker' in navigator) {
+                navigator.serviceWorker.register('/service-worker.published.js');
+            }
+        })();
+    </script>
+</body>
+
+</html>

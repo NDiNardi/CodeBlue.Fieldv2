@@ -1,0 +1,304 @@
+@using System.Threading
+@using System.Security.Claims
+@using CodeBlue.Field.App.Models
+@inject FieldAuthenticationStateProvider AuthStateProvider
+@inject IFieldDataService FieldData
+@inject IFieldSyncService FieldSync
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<div class="bottom-menu-bar"></div>
+
+<button class="bottom-menu-button" type="button" @onclick="ToggleMenu" aria-label="Open navigation">
+    <img src="/icons/icon-192.png" alt="CodeBlue" class="bottom-menu-logo bottom-menu-logo-icon" />
+    @if (_showSyncBadge)
+    {
+        <span class="bottom-menu-badge" aria-label="@SyncBadgeAriaLabel">@SyncBadgeText</span>
+    }
+</button>
+
+@if (_isRendered)
+{
+    <div class="menu-backdrop @MenuBackdropClass" @onclick="CloseMenu"></div>
+    <section class="bottom-sheet @MenuSheetClass" aria-label="Navigation menu">
+        <div class="bottom-sheet-handle"></div>
+        <div class="bottom-sheet-header">
+            <div>
+                <p class="eyebrow">CodeBlue</p>
+                <h2>Field Menu</h2>
+            </div>
+            <div class="sheet-header-actions">
+                @if (_showInstallLink)
+                {
+                    <button class="sheet-install-mini" type="button" @onclick="InstallAsync" aria-label="@InstallAriaLabel">
+                        <span class="sheet-nav-icon">⬇</span>
+                        <span class="sheet-install-mini-label">@(_showIosInstallHint ? "How To" : "Install")</span>
+                    </button>
+                }
+                <button class="sheet-close sheet-close-x" type="button" @onclick="CloseMenu" aria-label="Close navigation">X</button>
+            </div>
+        </div>
+
+        <nav class="sheet-nav">
+            @if (CanAccessDashboard)
+            {
+                <NavLink class="sheet-nav-link" href="" Match="NavLinkMatch.All" @onclick="CloseMenu">
+                    <span class="sheet-nav-icon">▦</span>
+                    <strong>Dashboard</strong>
+                </NavLink>
+            }
+            @if (CanAccessWorkOrders)
+            {
+                <NavLink class="sheet-nav-link" href="work-orders" @onclick="CloseMenu">
+                    <span class="sheet-nav-icon">📋</span>
+                    <strong>Work Orders</strong>
+                </NavLink>
+            }
+            @if (CanAccessCustomers)
+            {
+                <NavLink class="sheet-nav-link" href="customers" @onclick="CloseMenu">
+                    <span class="sheet-nav-icon">👥</span>
+                    <strong>Customers</strong>
+                </NavLink>
+            }
+            @if (CanAccessClaims)
+            {
+                <NavLink class="sheet-nav-link" href="claims" @onclick="CloseMenu">
+                    <span class="sheet-nav-icon">🧾</span>
+                    <strong>Claims</strong>
+                </NavLink>
+            }
+            @if (CanAccessServiceRequests)
+            {
+                <NavLink class="sheet-nav-link" href="service-requests" @onclick="CloseMenu">
+                    <span class="sheet-nav-icon">✚</span>
+                    <strong>Service Requests</strong>
+                </NavLink>
+            }
+            @if (CanAccessSchedule)
+            {
+                <NavLink class="sheet-nav-link" href="schedule" @onclick="CloseMenu">
+                    <span class="sheet-nav-icon">🗓</span>
+                    <strong>Scheduling</strong>
+                </NavLink>
+            }
+            <NavLink class="sheet-nav-link" href="sync" @onclick="CloseMenu">
+                <span class="sheet-nav-icon">⇅</span>
+                <strong>Sync</strong>
+                @if (_showSyncBadge)
+                {
+                    <span class="sheet-nav-badge">@SyncBadgeText</span>
+                }
+            </NavLink>
+            <NavLink class="sheet-nav-link" href="my-account" @onclick="CloseMenu">
+                <span class="sheet-nav-icon">◉</span>
+                <strong>My Account</strong>
+            </NavLink>
+            @if (_showIosInstallHint)
+            {
+                <div class="sheet-nav-hint">
+                    On iPhone/iPad: tap Share, then Add to Home Screen.
+                </div>
+            }
+            <button class="sheet-nav-link sheet-nav-link-button" type="button" @onclick="LogoutAsync">
+                <span class="sheet-nav-icon">⇠</span>
+                <strong>Logout</strong>
+            </button>
+        </nav>
+    </section>
+}
+
+@code {
+    private bool _isOpen;
+    private bool _isRendered;
+    private bool _showInstallLink;
+    private bool _isInstalled;
+    private bool _showIosInstallHint;
+    private bool _canPromptInstall;
+    private SyncSnapshot? _syncSnapshot;
+    private FieldSyncStatusDto? _serverStatus;
+    private int _pendingSyncCount;
+    private bool _isAdmin;
+    private bool _isOffice;
+    private bool _isTechnician;
+    private CancellationTokenSource? _closeAnimationCts;
+    private DotNetObjectReference<NavMenu>? _pwaInstallRef;
+    private string MenuBackdropClass => _isOpen ? "is-open" : "is-closing";
+    private string MenuSheetClass => _isOpen ? "is-open" : "is-closing";
+    private int RemoteSyncCount => _serverStatus?.TotalChangeCount ?? 0;
+    private bool _showSyncBadge => _pendingSyncCount > 0 || RemoteSyncCount > 0;
+    private string SyncBadgeText => _pendingSyncCount > 0
+        ? _pendingSyncCount.ToString()
+        : RemoteSyncCount > 99 ? "99+" : RemoteSyncCount.ToString();
+    private string SyncBadgeAriaLabel => _pendingSyncCount > 0
+        ? $"{_pendingSyncCount} change(s) pending sync"
+        : RemoteSyncCount > 0
+            ? $"{RemoteSyncCount} server change(s) waiting to download"
+            : "Sync is current";
+    private string InstallAriaLabel => _showIosInstallHint
+        ? "Install help"
+        : "Install app";
+    private bool CanAccessDashboard => _isAdmin || _isTechnician;
+    private bool CanAccessWorkOrders => _isAdmin || _isOffice;
+    private bool CanAccessCustomers => _isAdmin || _isOffice;
+    private bool CanAccessClaims => _isAdmin || _isOffice || _isTechnician;
+    private bool CanAccessServiceRequests => _isAdmin || _isOffice;
+    private bool CanAccessSchedule => _isAdmin || _isOffice;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        _isAdmin = user.IsInRole("Admin");
+        _isOffice = user.IsInRole("Office");
+        _isTechnician = user.IsInRole("Technician");
+        await RefreshSyncStateAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        _pwaInstallRef = DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("pwaSubscribeInstallState", _pwaInstallRef);
+        await RefreshSyncStateAsync();
+    }
+
+    private async Task ToggleMenu()
+    {
+        if (_isOpen)
+        {
+            await CloseMenu();
+            return;
+        }
+
+        _closeAnimationCts?.Cancel();
+        _closeAnimationCts = null;
+        await RefreshSyncStateAsync();
+        _isRendered = true;
+        _isOpen = true;
+    }
+
+    private async Task CloseMenu()
+    {
+        if (!_isRendered)
+        {
+            return;
+        }
+
+        _isOpen = false;
+        _closeAnimationCts?.Cancel();
+        _closeAnimationCts = new CancellationTokenSource();
+        var token = _closeAnimationCts.Token;
+
+        try
+        {
+            await Task.Delay(190, token);
+            _isRendered = false;
+        }
+        catch (TaskCanceledException)
+        {
+        }
+    }
+
+    [JSInvokable]
+    public Task OnPwaInstallStateChanged(PwaInstallState state)
+    {
+        _isInstalled = state.Installed;
+        _canPromptInstall = state.CanPrompt;
+        _showIosInstallHint = state.IsIosSafari && !state.Installed;
+            _showInstallLink = !state.Installed;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private async Task RefreshSyncStateAsync()
+    {
+        try
+        {
+            _syncSnapshot = await FieldData.GetSyncSnapshotAsync();
+            var pendingChanges = await FieldData.GetPendingChangesAsync();
+            _pendingSyncCount = pendingChanges.Count;
+            _serverStatus = await FieldSync.GetServerStatusAsync();
+            StateHasChanged();
+        }
+        catch
+        {
+            _syncSnapshot = null;
+            _pendingSyncCount = 0;
+            _serverStatus = null;
+        }
+    }
+
+    private async Task InstallAsync()
+    {
+        if (_showIosInstallHint)
+        {
+            await JS.InvokeVoidAsync("alert", "On iPhone/iPad: tap Share, then Add to Home Screen.");
+            return;
+        }
+
+        if (!_canPromptInstall)
+        {
+            await JS.InvokeVoidAsync("alert", "Install is not available yet. On Android, open the browser menu and choose Install app or Add to Home screen.");
+            return;
+        }
+
+        try
+        {
+            var result = await JS.InvokeAsync<InstallResult>("pwaPromptInstall");
+            if (result is not null && result.ok)
+            {
+                _isInstalled = true;
+                _showInstallLink = false;
+                _showIosInstallHint = false;
+                _canPromptInstall = false;
+                await CloseMenu();
+                StateHasChanged();
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task LogoutAsync()
+    {
+        await CloseMenu();
+        await AuthStateProvider.SignOutAsync();
+        Nav.NavigateTo("/login", replace: true);
+    }
+
+    private sealed class InstallResult
+    {
+        public bool ok { get; set; }
+        public string? reason { get; set; }
+        public string? outcome { get; set; }
+    }
+
+    public sealed class PwaInstallState
+    {
+        public bool Installed { get; set; }
+        public bool CanPrompt { get; set; }
+        public bool IsIosSafari { get; set; }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_pwaInstallRef is not null)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("pwaUnsubscribeInstallState", _pwaInstallRef);
+            }
+            catch
+            {
+            }
+
+            _pwaInstallRef.Dispose();
+        }
+    }
+}
