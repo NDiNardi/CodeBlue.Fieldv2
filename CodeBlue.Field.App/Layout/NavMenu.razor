@@ -42,52 +42,54 @@
 
         <nav class="sheet-nav">
             <div class="sheet-nav-section-label">Quick Actions</div>
-            <NavLink class="sheet-nav-link" href="service-requests/quick" @onclick="CloseMenu">
-                <span class="sheet-nav-icon">⚡</span>
-                <strong>Quick Request</strong>
-            </NavLink>
-            <NavLink class="sheet-nav-link" href="claims/quick" @onclick="CloseMenu">
-                <span class="sheet-nav-icon">⚡</span>
-                <strong>Quick Claim</strong>
-            </NavLink>
+            <div class="sheet-quick-grid">
+                <NavLink class="sheet-nav-link sheet-nav-link-quick" href="service-requests/quick" @onclick="CloseMenu">
+                    <span class="sheet-nav-icon">⚡</span>
+                    <strong>Service Request</strong>
+                </NavLink>
+                <NavLink class="sheet-nav-link sheet-nav-link-quick" href="claims/quick" @onclick="CloseMenu">
+                    <span class="sheet-nav-icon">⚡</span>
+                    <strong>Claim</strong>
+                </NavLink>
+            </div>
 
             <div class="sheet-nav-section-label">Navigation</div>
             @if (CanAccessDashboard)
             {
-                <NavLink class="sheet-nav-link" href="" Match="NavLinkMatch.All" @onclick="CloseMenu">
+                <NavLink class="sheet-nav-link sheet-nav-link-page" href="" Match="NavLinkMatch.All" @onclick="CloseMenu">
                     <span class="sheet-nav-icon">▦</span>
                     <strong>Dashboard</strong>
                 </NavLink>
             }
             @if (CanAccessCustomers)
             {
-                <NavLink class="sheet-nav-link" href="customers" @onclick="CloseMenu">
+                <NavLink class="sheet-nav-link sheet-nav-link-page" href="customers" @onclick="CloseMenu">
                     <span class="sheet-nav-icon">👥</span>
                     <strong>Customers</strong>
                 </NavLink>
             }
             @if (CanAccessClaims)
             {
-                <NavLink class="sheet-nav-link" href="claims" @onclick="CloseMenu">
+                <NavLink class="sheet-nav-link sheet-nav-link-page" href="claims" @onclick="CloseMenu">
                     <span class="sheet-nav-icon">🧾</span>
                     <strong>Claims</strong>
                 </NavLink>
             }
             @if (CanAccessServiceRequests)
             {
-                <NavLink class="sheet-nav-link" href="service-requests" @onclick="CloseMenu">
+                <NavLink class="sheet-nav-link sheet-nav-link-page" href="service-requests" @onclick="CloseMenu">
                     <span class="sheet-nav-icon">✚</span>
                     <strong>Service Requests</strong>
                 </NavLink>
             }
             @if (CanAccessSchedule)
             {
-                <NavLink class="sheet-nav-link" href="schedule" @onclick="CloseMenu">
+                <NavLink class="sheet-nav-link sheet-nav-link-page" href="schedule" @onclick="CloseMenu">
                     <span class="sheet-nav-icon">🗺</span>
                     <strong>Route Planning</strong>
                 </NavLink>
             }
-            <NavLink class="sheet-nav-link" href="sync" @onclick="CloseMenu">
+            <NavLink class="sheet-nav-link sheet-nav-link-page" href="sync" @onclick="CloseMenu">
                 <span class="sheet-nav-icon">⇅</span>
                 <strong>Sync</strong>
                 @if (_showSyncBadge)
@@ -95,7 +97,7 @@
                     <span class="sheet-nav-badge">@SyncBadgeText</span>
                 }
             </NavLink>
-            <NavLink class="sheet-nav-link" href="my-account" @onclick="CloseMenu">
+            <NavLink class="sheet-nav-link sheet-nav-link-page" href="my-account" @onclick="CloseMenu">
                 <span class="sheet-nav-icon">◉</span>
                 <strong>My Account</strong>
             </NavLink>

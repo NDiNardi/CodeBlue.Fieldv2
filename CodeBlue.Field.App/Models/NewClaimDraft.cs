@@ -19,6 +19,7 @@ public sealed class NewClaimDraft
     public string IdSerialNumber { get; init; } = string.Empty;
     public string ComponentSerialNumber { get; init; } = string.Empty;
     public string Notes { get; init; } = string.Empty;
+    public bool UpdateBuilder { get; init; }
     public string CompletedBy { get; init; } = string.Empty;
     public ClaimImagePayload? Serial1Photo { get; init; }
     public ClaimImagePayload? Serial2Photo { get; init; }

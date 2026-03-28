@@ -391,6 +391,7 @@ public sealed class LocalFieldDataService(IBrowserStorageService storage) : IFie
             IdSerialNumber = draft.IdSerialNumber,
             ComponentSerialNumber = draft.ComponentSerialNumber,
             Notes = draft.Notes,
+            UpdateBuilder = draft.UpdateBuilder,
             CompletedBy = draft.CompletedBy,
             Serial1Photo = draft.Serial1Photo,
             Serial2Photo = draft.Serial2Photo,

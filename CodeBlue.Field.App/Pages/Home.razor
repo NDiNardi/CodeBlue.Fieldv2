@@ -36,7 +36,7 @@ else
             </div>
         </div>
 
-        <div class="sch-route-daystrip" style="padding:0 1.25rem 1rem;">
+        <div class="sch-route-daystrip dashboard-group-strip">
             @foreach (var group in RouteGroups)
             {
                 <button class="@($"sch-daypill {GroupPillClass(group)} {(group == _selectedGroup ? "is-active" : string.Empty)}")" type="button" @onclick="() => SelectGroup(group)">
@@ -167,10 +167,6 @@ else
                                         }
                                     </div>
                                     <div class="card-subline card-subline-clamp">@ProblemText(serviceRequest)</div>
-                                    @if (serviceRequest.HasPendingUpload)
-                                    {
-                                        <span class="pill pill-alert dashboard-stop-pill">Pending sync</span>
-                                    }
                                 </div>
                             </div>
                         </div>
@@ -246,7 +242,7 @@ else
     @if (_callDialogRequest is not null)
     {
         <div class="menu-backdrop is-open" @onclick="CloseCallFlow"></div>
-        <section class="bottom-sheet is-open dashboard-call-sheet" aria-label="Call customer">
+        <section class="bottom-sheet is-open dashboard-call-sheet @(_callNotesStage ? "dashboard-call-sheet-notes" : string.Empty)" aria-label="Call customer">
             <div class="bottom-sheet-handle"></div>
             @if (!_callNotesStage)
             {
@@ -285,16 +281,13 @@ else
                         <h2>Notes from call</h2>
                     </div>
                 </div>
-                <div class="sheet-nav">
-                    <label class="field-stack">
-                        <span>Notes from call</span>
-                        <textarea class="field-input field-textarea" rows="4" @bind="_callNotes"></textarea>
-                    </label>
+                <div class="sheet-nav dashboard-call-notes">
+                    <textarea class="field-input field-textarea dashboard-call-notes-input" @bind="_callNotes"></textarea>
                     @if (CanOfferBuilderUpdate(_callDialogRequest))
                     {
                         <label class="field-check-row">
                             <input type="checkbox" @bind="_updateBuilderAfterCall" />
-                            <span>Update builder on future status changes for this service request</span>
+                            <span>Update Builder</span>
                         </label>
                     }
                     <div class="dashboard-call-actions">

@@ -23,6 +23,25 @@ jobs:
       - name: Restore
         run: dotnet restore "CodeBlue.Field.App/CodeBlue.Field.App.csproj"
 
+      - name: Inject Google Maps API key
+        shell: pwsh
+        env:
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:GOOGLE_MAPS_API_KEY)) {
+            throw "GitHub secret GOOGLE_MAPS_API_KEY is not set."
+          }
+
+          $path = "CodeBlue.Field.App/wwwroot/appsettings.json"
+          $json = Get-Content $path -Raw | ConvertFrom-Json
+
+          if (-not $json.PSObject.Properties["Google"]) {
+            $json | Add-Member -MemberType NoteProperty -Name Google -Value ([pscustomobject]@{})
+          }
+
+          $json.Google.ApiKey = $env:GOOGLE_MAPS_API_KEY
+          $json | ConvertTo-Json -Depth 10 | Set-Content $path
+
       - name: Build
         run: dotnet build "CodeBlue.Field.App/CodeBlue.Field.App.csproj" --configuration Release --no-restore
 

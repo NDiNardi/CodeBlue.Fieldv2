@@ -431,27 +431,33 @@ h1:focus {
 .stop-card-row,
 .history-card-row,
 .claim-card-row,
-.customer-card-row,
-.dashboard-stop-top {
+.customer-card-row {
     display: flex;
     justify-content: space-between;
     align-items: start;
     gap: 0.55rem;
 }
 
+.dashboard-stop-top {
+    position: relative;
+    display: block;
+    min-height: 1rem;
+    padding-right: 2.9rem;
+}
+
 .dashboard-stop-inline-action {
-    flex: 0 0 auto;
+    position: absolute;
+    top: 0;
+    right: 0;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    margin-left: auto;
     gap: 0.45rem;
-    align-self: flex-start;
     white-space: nowrap;
 }
 
 .dashboard-stop-top .address-title {
-    flex: 1 1 auto;
+    display: block;
     min-width: 0;
 }
 
@@ -988,6 +994,22 @@ h1:focus {
     max-width: 30rem;
 }
 
+.dashboard-call-sheet-notes {
+    width: min(92vw, 42rem);
+    max-height: 75dvh;
+}
+
+.dashboard-call-notes {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto auto;
+    min-height: 0;
+}
+
+.dashboard-call-notes-input {
+    min-height: 52dvh;
+    resize: none;
+}
+
 .dashboard-call-actions {
     display: grid;
     gap: 0.55rem;
@@ -1022,6 +1044,10 @@ h1:focus {
 
 .dashboard-stop-pill {
     margin-top: 0.05rem;
+}
+
+.dashboard-stop-card .stop-card-main {
+    position: relative;
 }
 
 .dashboard-stop-date {
@@ -1221,7 +1247,7 @@ h1:focus {
 .route-map-body {
     position: relative;
     min-height: 11rem;
-    padding: 0.55rem 0.85rem 0.85rem;
+    padding: 0 0.85rem 0.85rem;
 }
 
 .route-live-map {
@@ -1747,6 +1773,11 @@ h1:focus {
     flex-wrap: wrap;
     justify-content: center;
     margin-bottom: 0.7rem;
+}
+
+.dashboard-group-strip {
+    padding: 0 1.25rem 0.25rem;
+    margin-bottom: 0;
 }
 
 .sch-mobile-minidrops {
@@ -3192,7 +3223,6 @@ h1:focus {
     .history-card-row,
     .claim-card-row,
     .customer-card-row,
-    .dashboard-stop-top,
     .pagination-row,
     .bottom-sheet-header {
         display: flex;
@@ -3281,5 +3311,52 @@ h1:focus {
 
     .bottom-menu-bar {
     
+    }
+}
+
+.bottom-sheet {
+    top: max(0.75rem, env(safe-area-inset-top));
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100dvh - 4.1rem - max(env(safe-area-inset-top), 0px));
+    overflow: hidden;
+    overscroll-behavior: contain;
+}
+
+.bottom-sheet-header {
+    flex: 0 0 auto;
+}
+
+.sheet-nav {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    padding: 0 0.9rem calc(0.95rem + env(safe-area-inset-bottom));
+}
+
+.sheet-quick-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.55rem;
+}
+
+.sheet-nav-link-quick {
+    grid-template-columns: 1.25rem 1fr;
+    gap: 0.55rem;
+    min-height: 3.35rem;
+    padding: 0.8rem 0.75rem;
+}
+
+.sheet-nav-link-page {
+    padding-top: calc(1rem - 2.5px);
+    padding-bottom: calc(1rem - 2.5px);
+}
+
+@media (max-width: 760px) {
+    .bottom-sheet {
+        top: max(0.35rem, env(safe-area-inset-top));
+        max-height: calc(100dvh - 3.7rem - max(env(safe-area-inset-top), 0px));
     }
 }

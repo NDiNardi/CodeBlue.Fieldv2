@@ -96,6 +96,14 @@ else
                             <textarea @bind="_notes" rows="9"></textarea>
                         </label>
 
+                        @if (CanUpdateBuilder)
+                        {
+                            <label class="field-check-row field-form-spacer">
+                                <input type="checkbox" @bind="_updateBuilder" />
+                                <span>Update Builder</span>
+                            </label>
+                        }
+
                         @if (!string.IsNullOrWhiteSpace(_validationMessage))
                         {
                             <div class="validation-banner">@_validationMessage</div>
@@ -124,10 +132,12 @@ else
     private string _idSerialNumber = string.Empty;
     private string _componentSerialNumber = string.Empty;
     private string _notes = string.Empty;
+    private bool _updateBuilder;
     private string _failureDateString = string.Empty;
     private string _repairDateString = DateOnly.FromDateTime(DateTime.Today).ToString("yyyy-MM-dd");
     private string? _validationMessage;
     private string? _saveMessage;
+    private bool CanUpdateBuilder => !string.IsNullOrWhiteSpace(_customer?.OriginalInstallerDealer);
 
     protected override async Task OnParametersSetAsync()
     {
@@ -193,6 +203,7 @@ else
                 IdSerialNumber = _idSerialNumber.Trim(),
                 ComponentSerialNumber = _componentSerialNumber.Trim(),
                 Notes = _notes.Trim(),
+                UpdateBuilder = _updateBuilder,
                 CompletedBy = _currentUsername,
                 Serial1Photo = null,
                 Serial2Photo = null
