@@ -72,6 +72,19 @@ public sealed class FieldAuthenticationStateProvider(
         NotifyAuthenticationStateChanged(Task.FromResult(new AuthenticationState(BuildPrincipal(_session))));
     }
 
+    public async Task<string> GetCachedUsernameAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(_session?.Username))
+        {
+            return _session.Username;
+        }
+
+        var storedSession = await GetStoredSessionAsync();
+        return storedSession?.IsAuthenticated == true
+            ? storedSession.Username ?? string.Empty
+            : string.Empty;
+    }
+
     private async Task ValidateSessionAsync()
     {
         if (_isValidating)

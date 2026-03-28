@@ -59,8 +59,8 @@ window.codeBlue = window.codeBlue || {};
   root.assets = root.assets || {};
 
   root.assets.ensureMaps = async function () {
-    await loadStyle("leaflet-css", "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css");
-    await loadScript("leaflet-js", "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js");
+    await loadStyle("leaflet-css", "/vendor/leaflet/leaflet.css");
+    await loadScript("leaflet-js", "/vendor/leaflet/leaflet.js");
     await loadScript("codeblue-maps", "/js/codeBlue.maps.js?v=20260322c");
   };
 

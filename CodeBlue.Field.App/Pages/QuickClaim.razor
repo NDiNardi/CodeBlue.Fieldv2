@@ -4,7 +4,7 @@
 @using CodeBlue.Field.App.Services
 @using CodeBlue.Field.App.Util
 @inject IFieldDataService FieldData
-@inject IFieldAccountClient AccountClient
+@inject FieldAuthenticationStateProvider AuthStateProvider
 @inject NavigationManager Nav
 
 <PageTitle>Quick Claim</PageTitle>
@@ -142,18 +142,14 @@ else
     protected override async Task OnParametersSetAsync()
     {
         _loading = true;
-        var customers = await FieldData.GetCustomersAsync();
-        _customer = customers.FirstOrDefault(x => x.Id == CustomerId);
+        var customersTask = FieldData.GetCustomersAsync();
+        var usernameTask = AuthStateProvider.GetCachedUsernameAsync();
 
-        try
-        {
-            var profile = await AccountClient.GetProfileAsync();
-            _currentUsername = profile.Username ?? string.Empty;
-        }
-        catch
-        {
-            _currentUsername = string.Empty;
-        }
+        await Task.WhenAll(customersTask, usernameTask);
+
+        var customers = await customersTask;
+        _customer = customers.FirstOrDefault(x => x.Id == CustomerId);
+        _currentUsername = await usernameTask;
 
         _failureDateString = _customer?.StartupDate?.ToString("yyyy-MM-dd") ?? string.Empty;
         _loading = false;

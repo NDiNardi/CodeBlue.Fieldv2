@@ -7,7 +7,7 @@
 @using Microsoft.Extensions.Configuration
 @using Microsoft.JSInterop
 @inject IFieldDataService FieldData
-@inject IFieldAccountClient AccountClient
+@inject FieldAuthenticationStateProvider AuthStateProvider
 @inject IConfiguration Configuration
 @inject IJSRuntime JS
 @inject NavigationManager Nav
@@ -182,17 +182,15 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        _customers = await FieldData.GetCustomersAsync();
-        _builders = await FieldData.GetBuilderCompaniesAsync();
-        try
-        {
-            var profile = await AccountClient.GetProfileAsync();
-            _currentUsername = profile.Username ?? string.Empty;
-        }
-        catch
-        {
-            _currentUsername = string.Empty;
-        }
+        var customersTask = FieldData.GetCustomersAsync();
+        var buildersTask = FieldData.GetBuilderCompaniesAsync();
+        var usernameTask = AuthStateProvider.GetCachedUsernameAsync();
+
+        await Task.WhenAll(customersTask, buildersTask, usernameTask);
+
+        _customers = await customersTask;
+        _builders = await buildersTask;
+        _currentUsername = await usernameTask;
 
         _loading = false;
     }

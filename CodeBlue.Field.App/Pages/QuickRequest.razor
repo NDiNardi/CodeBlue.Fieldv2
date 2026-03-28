@@ -195,9 +195,15 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        _customers = await FieldData.GetCustomersAsync();
-        _requests = await FieldData.GetWorkOrdersAsync();
-        _builders = await FieldData.GetBuilderCompaniesAsync();
+        var customersTask = FieldData.GetCustomersAsync();
+        var requestsTask = FieldData.GetWorkOrdersAsync();
+        var buildersTask = FieldData.GetBuilderCompaniesAsync();
+
+        await Task.WhenAll(customersTask, requestsTask, buildersTask);
+
+        _customers = await customersTask;
+        _requests = await requestsTask;
+        _builders = await buildersTask;
         _loading = false;
     }
 

@@ -354,8 +354,8 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        await EnsureFreshSnapshotAsync();
         await ReloadAsync();
+        _ = RefreshSnapshotInBackgroundAsync();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -365,14 +365,32 @@ else
 
     private async Task ReloadAsync()
     {
-        _snapshot = await FieldData.GetSyncSnapshotAsync();
-        _workOrders = await FieldData.GetWorkOrdersAsync();
-        _pendingChanges = await FieldData.GetPendingChangesAsync();
+        var snapshotTask = FieldData.GetSyncSnapshotAsync();
+        var workOrdersTask = FieldData.GetWorkOrdersAsync();
+        var pendingChangesTask = FieldData.GetPendingChangesAsync();
+
+        await Task.WhenAll(snapshotTask, workOrdersTask, pendingChangesTask);
+
+        _snapshot = await snapshotTask;
+        _workOrders = await workOrdersTask;
+        _pendingChanges = await pendingChangesTask;
         _selectedGroup = ChooseDefaultGroup(_workOrders);
         _lastMapRenderKey = null;
     }
 
-    private async Task EnsureFreshSnapshotAsync()
+    private async Task RefreshSnapshotInBackgroundAsync()
+    {
+        var refreshed = await EnsureFreshSnapshotAsync();
+        if (!refreshed)
+        {
+            return;
+        }
+
+        await ReloadAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task<bool> EnsureFreshSnapshotAsync()
     {
         try
         {
@@ -383,13 +401,15 @@ else
 
             if (!needsRefresh)
             {
-                return;
+                return false;
             }
 
             await FieldSync.PullLatestAsync();
+            return true;
         }
         catch
         {
+            return false;
         }
     }
 

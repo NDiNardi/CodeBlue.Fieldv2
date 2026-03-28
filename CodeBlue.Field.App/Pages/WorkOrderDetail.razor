@@ -9,7 +9,7 @@
 @using CodeBlue.Field.App.Util
 @using Microsoft.AspNetCore.Components.Forms
 @inject IFieldDataService FieldData
-@inject IFieldAccountClient AccountClient
+@inject FieldAuthenticationStateProvider AuthStateProvider
 @inject HttpClient Http
 @inject IJSRuntime JS
 @inject NavigationManager Nav
@@ -390,7 +390,7 @@ else
         _loading = true;
         _lastMapRenderKey = null;
         await ReloadAsync();
-        await LoadCurrentUsernameAsync();
+        _currentUsername = await AuthStateProvider.GetCachedUsernameAsync();
         ResetForm();
         _loading = false;
     }
@@ -402,23 +402,16 @@ else
 
     private async Task ReloadAsync()
     {
-        var workOrders = await FieldData.GetWorkOrdersAsync();
-        _claims = await FieldData.GetClaimsAsync();
-        _customers = await FieldData.GetCustomersAsync();
-        _workOrder = workOrders.FirstOrDefault(x => x.Id == Id);
-    }
+        var workOrdersTask = FieldData.GetWorkOrdersAsync();
+        var claimsTask = FieldData.GetClaimsAsync();
+        var customersTask = FieldData.GetCustomersAsync();
 
-    private async Task LoadCurrentUsernameAsync()
-    {
-        try
-        {
-            var profile = await AccountClient.GetProfileAsync();
-            _currentUsername = profile.Username ?? string.Empty;
-        }
-        catch
-        {
-            _currentUsername = string.Empty;
-        }
+        await Task.WhenAll(workOrdersTask, claimsTask, customersTask);
+
+        var workOrders = await workOrdersTask;
+        _claims = await claimsTask;
+        _customers = await customersTask;
+        _workOrder = workOrders.FirstOrDefault(x => x.Id == Id);
     }
 
     private void ResetForm()
