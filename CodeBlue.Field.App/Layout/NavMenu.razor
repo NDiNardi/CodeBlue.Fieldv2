@@ -24,10 +24,7 @@
     <section class="bottom-sheet @MenuSheetClass" aria-label="Navigation menu">
         <div class="bottom-sheet-handle"></div>
         <div class="bottom-sheet-header">
-            <div>
-                <p class="eyebrow">CodeBlue</p>
-                <h2>Field Menu</h2>
-            </div>
+            <div class="sheet-header-label">Quick Actions</div>
             <div class="sheet-header-actions">
                 @if (_showInstallLink)
                 {
@@ -41,7 +38,6 @@
         </div>
 
         <nav class="sheet-nav">
-            <div class="sheet-nav-section-label">Quick Actions</div>
             <div class="sheet-quick-grid">
                 <NavLink class="sheet-nav-link sheet-nav-link-quick" href="service-requests/quick" @onclick="CloseMenu">
                     <span class="sheet-nav-icon">⚡</span>
