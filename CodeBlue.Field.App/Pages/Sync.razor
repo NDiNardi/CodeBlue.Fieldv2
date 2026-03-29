@@ -151,7 +151,18 @@ else
         try
         {
             _lastSyncResult = await FieldSync.SyncWithServerAsync();
-            await LoadAsync();
+            await LoadAsync(refreshServerStatus: false);
+
+            if (_lastSyncResult.Success)
+            {
+                _statusWarning = null;
+                _serverStatus = new FieldSyncStatusDto
+                {
+                    CheckedAtUtc = _lastSyncResult.AttemptedAtUtc,
+                    HasRemoteChanges = false,
+                    TotalChangeCount = 0
+                };
+            }
         }
         finally
         {
@@ -159,11 +170,16 @@ else
         }
     }
 
-    private async Task LoadAsync()
+    private async Task LoadAsync(bool refreshServerStatus = true)
     {
         _snapshot = await FieldData.GetSyncSnapshotAsync();
         _pendingChanges = await FieldData.GetPendingChangesAsync();
         _outboundSyncState = await FieldData.GetOutboundSyncStateAsync();
+
+        if (!refreshServerStatus)
+        {
+            return;
+        }
 
         _statusWarning = null;
 

@@ -273,9 +273,13 @@ h1:focus {
 }
 
 .sync-page-header {
-    padding: 0.45rem 0.8rem;
-    margin-bottom: 0.35rem;
-    min-height: 2.5rem;
+    padding: 0.3rem 0.8rem;
+    margin-bottom: 0.2rem;
+    min-height: 0;
+}
+
+.sync-page-header .dashboard-header-row {
+    min-height: 0;
 }
 
 .status-label,
@@ -991,12 +995,19 @@ h1:focus {
 }
 
 .dashboard-call-sheet {
+    width: min(92vw, 30rem);
     max-width: 30rem;
 }
 
 .dashboard-call-sheet-notes {
     width: min(92vw, 42rem);
     max-height: 75dvh;
+}
+
+.dashboard-call-confirm {
+    flex: 0 0 auto;
+    overflow: visible;
+    padding-bottom: calc(0.95rem + env(safe-area-inset-bottom));
 }
 
 .dashboard-call-notes {
@@ -1048,6 +1059,11 @@ h1:focus {
 
 .dashboard-stop-card .stop-card-main {
     position: relative;
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    width: 100%;
+    gap: 0.08rem;
 }
 
 .dashboard-stop-date {
@@ -1161,9 +1177,9 @@ h1:focus {
 
 .sync-result {
     margin-bottom: 0.7rem;
-    border: 1px solid rgba(0, 119, 182, 0.22);
-    background: rgba(0, 119, 182, 0.08);
-    color: #ff1f1f;
+    border: 1px solid rgba(54, 106, 74, 0.22);
+    background: rgba(54, 106, 74, 0.08);
+    color: var(--cb-ink);
     justify-content: center;
     text-align: center;
 }
@@ -3352,9 +3368,21 @@ h1:focus {
 }
 
 .sheet-nav-link-page {
-    min-height: 2.85rem;
-    padding-top: 0.68rem;
-    padding-bottom: 0.68rem;
+    min-height: 2.35rem;
+    padding-top: 0.44rem;
+    padding-bottom: 0.44rem;
+    font-size: 0.94rem;
+    line-height: 1.05;
+}
+
+.sheet-nav-link-page .sheet-nav-icon {
+    width: 1.3rem;
+    height: 1.3rem;
+    font-size: 0.92rem;
+}
+
+.sheet-nav-link-page strong {
+    line-height: 1.05;
 }
 
 @media (max-width: 760px) {
