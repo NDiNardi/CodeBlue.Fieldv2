@@ -238,8 +238,6 @@ else
 }
 
 @code {
-    private const double DefaultCenterLat = 36.175052;
-    private const double DefaultCenterLng = -115.156251;
     private static readonly IReadOnlyList<int> RouteGroups = [1, 2, 3, 4, 5];
 
     private readonly List<WorkOrderSummary> _allRequests = [];
@@ -254,6 +252,7 @@ else
     private Guid? _armedWorkOrderId;
     private string? _lastMapRenderKey;
     private bool _preserveMapViewOnce;
+    private bool _resetMapToDefaultOnce;
 
     private IReadOnlyList<WorkOrderSummary> UnassignedRequests => _unassigned;
     private IReadOnlyList<WorkOrderSummary> SelectedGroupStops =>
@@ -317,6 +316,8 @@ else
     private void SetAssignMode()
     {
         _viewMode = "assign";
+        _preserveMapViewOnce = false;
+        _resetMapToDefaultOnce = true;
         _lastMapRenderKey = null;
     }
 
@@ -324,6 +325,8 @@ else
     {
         _viewMode = "route";
         EnsureSelectedGroupIsPopulated();
+        _preserveMapViewOnce = false;
+        _resetMapToDefaultOnce = true;
         _lastMapRenderKey = null;
     }
 
@@ -443,9 +446,21 @@ else
         if (_lastMapRenderKey == mapKey) return;
         _lastMapRenderKey = mapKey;
 
-        await JS.InvokeVoidAsync("cbScheduleMap.renderPinsTo", "cbScheduleMap", pins, DefaultCenterLat, DefaultCenterLng, new { preserveView = _preserveMapViewOnce });
+        await JS.InvokeVoidAsync(
+            "cbScheduleMap.renderPinsTo",
+            "cbScheduleMap",
+            pins,
+            FieldMapDefaults.DefaultCenterLat,
+            FieldMapDefaults.DefaultCenterLng,
+            new
+            {
+                preserveView = _preserveMapViewOnce,
+                forceDefaultView = _resetMapToDefaultOnce,
+                defaultZoom = FieldMapDefaults.DefaultCenterZoom
+            });
         await JS.InvokeVoidAsync("cbScheduleMap.invalidate");
         _preserveMapViewOnce = false;
+        _resetMapToDefaultOnce = false;
     }
 
     [JSInvokable]
@@ -584,6 +599,8 @@ else
 
     private static string DetailHref(WorkOrderSummary request) => $"/service-requests/{request.Id}";
 
+    private static string SubmittedLabel(WorkOrderSummary request) => $"Submitted {request.DateSubmitted:M/d/yy}";
+
     private static string FirstLine(string value) =>
         string.IsNullOrWhiteSpace(value) ? "Unknown Address" : value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? value;
 
@@ -597,7 +614,41 @@ else
         builder.AddAttribute(5, "draggable", "true");
         builder.AddAttribute(6, "ondragstart", EventCallback.Factory.Create<DragEventArgs>(this, _ => BeginDrag(request.Id)));
         builder.AddAttribute(7, "onclick", EventCallback.Factory.Create(this, () => Arm(request.Id)));
-        builder.AddMarkupContent(8, $"<div class=\"sch-item-row\"><div class=\"sch-item-title\"><span class=\"sch-item-street\">{StreetOnly(request)}</span><span class=\"sch-item-desc\">{ProblemText(request)}</span></div><a class=\"icon-action ghost-action sch-item-open\" href=\"{DetailHref(request)}\" title=\"Open service request\" aria-label=\"Open service request\" onclick=\"event.stopPropagation();\"><span class=\"schedule-open-glyph\">↗</span></a></div>");
+        builder.OpenElement(8, "div");
+        builder.AddAttribute(9, "class", "sch-item-row");
+
+        builder.OpenElement(10, "div");
+        builder.AddAttribute(11, "class", "sch-item-title");
+        builder.OpenElement(12, "span");
+        builder.AddAttribute(13, "class", "sch-item-street");
+        builder.AddContent(14, StreetOnly(request));
+        builder.CloseElement();
+        builder.OpenElement(15, "span");
+        builder.AddAttribute(16, "class", "sch-item-desc");
+        builder.AddContent(17, ProblemText(request));
+        builder.CloseElement();
+        builder.CloseElement();
+
+        builder.OpenElement(18, "div");
+        builder.AddAttribute(19, "class", "sch-item-meta");
+        builder.OpenElement(20, "a");
+        builder.AddAttribute(21, "class", "icon-action ghost-action sch-item-open");
+        builder.AddAttribute(22, "href", DetailHref(request));
+        builder.AddAttribute(23, "title", "Open service request");
+        builder.AddAttribute(24, "aria-label", "Open service request");
+        builder.AddEventStopPropagationAttribute(25, "onclick", true);
+        builder.OpenElement(26, "span");
+        builder.AddAttribute(27, "class", "schedule-open-glyph");
+        builder.AddContent(28, "↗");
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.OpenElement(29, "span");
+        builder.AddAttribute(30, "class", "sch-item-date");
+        builder.AddContent(31, SubmittedLabel(request));
+        builder.CloseElement();
+        builder.CloseElement();
+
+        builder.CloseElement();
         builder.CloseElement();
     };
 

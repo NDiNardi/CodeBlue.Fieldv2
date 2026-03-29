@@ -25,7 +25,7 @@ public sealed class LocalFieldDataService(IBrowserStorageService storage) : IFie
     public async Task<SyncSnapshot> GetSyncSnapshotAsync(CancellationToken cancellationToken = default)
     {
         await EnsureSeededAsync();
-        return await GetRequiredAsync(SnapshotKey, FieldSeedData.CreateSnapshot);
+        return await GetRequiredAsync(SnapshotKey, CreateEmptySnapshot);
     }
 
     public async Task<IReadOnlyList<WorkOrderSummary>> GetWorkOrdersAsync(CancellationToken cancellationToken = default)
@@ -1120,7 +1120,7 @@ public sealed class LocalFieldDataService(IBrowserStorageService storage) : IFie
 
         if (await storage.GetStringAsync(WorkOrdersKey) is null)
         {
-            await SaveAsync(SnapshotKey, FieldSeedData.CreateSnapshot());
+            await SaveAsync(SnapshotKey, CreateEmptySnapshot());
             await SaveAsync(TechniciansKey, Array.Empty<FieldTechnicianOption>());
             await SaveAsync(WorkOrdersKey, Array.Empty<WorkOrderSummary>());
             await SaveAsync(CustomersKey, Array.Empty<CustomerSummary>());
@@ -1137,7 +1137,7 @@ public sealed class LocalFieldDataService(IBrowserStorageService storage) : IFie
 
     private async Task NormalizeLegacySeedQueueAsync()
     {
-        var pendingChanges = await GetRequiredAsync<IReadOnlyList<PendingChange>>(PendingChangesKey, FieldSeedData.CreatePendingChanges);
+        var pendingChanges = await GetRequiredAsync<IReadOnlyList<PendingChange>>(PendingChangesKey, static () => Array.Empty<PendingChange>());
         var outboundState = await GetRequiredAsync(OutboundSyncKey, () => new OutboundSyncState());
 
         if (outboundState.ClaimsToCreate.Count > 0 || outboundState.ServiceRequestOfficeActions.Count > 0 || outboundState.WorkOrdersToComplete.Count > 0)
@@ -1161,7 +1161,7 @@ public sealed class LocalFieldDataService(IBrowserStorageService storage) : IFie
 
         await SaveAsync(PendingChangesKey, Array.Empty<PendingChange>());
 
-        var currentSnapshot = await GetRequiredAsync(SnapshotKey, FieldSeedData.CreateSnapshot);
+        var currentSnapshot = await GetRequiredAsync(SnapshotKey, CreateEmptySnapshot);
         await SaveAsync(SnapshotKey, new SyncSnapshot
         {
             LastSuccessfulSync = currentSnapshot.LastSuccessfulSync,
@@ -1173,9 +1173,9 @@ public sealed class LocalFieldDataService(IBrowserStorageService storage) : IFie
 
     private async Task NormalizeLinkedStreet1Async()
     {
-        var customers = (await GetRequiredAsync<IReadOnlyList<CustomerSummary>>(CustomersKey, FieldSeedData.CreateCustomers)).ToList();
-        var workOrders = (await GetRequiredAsync<IReadOnlyList<WorkOrderSummary>>(WorkOrdersKey, FieldSeedData.CreateWorkOrders)).ToList();
-        var claims = (await GetRequiredAsync<IReadOnlyList<ClaimSummary>>(ClaimsKey, FieldSeedData.CreateClaims)).ToList();
+        var customers = (await GetRequiredAsync<IReadOnlyList<CustomerSummary>>(CustomersKey, static () => Array.Empty<CustomerSummary>())).ToList();
+        var workOrders = (await GetRequiredAsync<IReadOnlyList<WorkOrderSummary>>(WorkOrdersKey, static () => Array.Empty<WorkOrderSummary>())).ToList();
+        var claims = (await GetRequiredAsync<IReadOnlyList<ClaimSummary>>(ClaimsKey, static () => Array.Empty<ClaimSummary>())).ToList();
 
         var customerStreetLookup = customers
             .Where(c => !string.IsNullOrWhiteSpace(c.Street1))
@@ -1405,4 +1405,12 @@ public sealed class LocalFieldDataService(IBrowserStorageService storage) : IFie
         string.IsNullOrWhiteSpace(value)
             ? string.Empty
             : value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? value;
+
+    private static SyncSnapshot CreateEmptySnapshot() => new()
+    {
+        LastSuccessfulSync = default,
+        PendingUploadCount = 0,
+        IsOfflineModeEnabled = true,
+        HasCompletedSync = false
+    };
 }

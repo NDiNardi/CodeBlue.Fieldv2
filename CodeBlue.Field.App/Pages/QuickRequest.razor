@@ -58,17 +58,27 @@ else
                                     <span class="muted-note">Address autocomplete is currently unavailable.</span>
                                 }
                             </label>
+                            <div class="quick-request-city-row form-field-full">
+                                <label class="form-field">
+                                    <span>City *</span>
+                                    <input @bind="_city" />
+                                </label>
+                                <label class="form-field">
+                                    <span>State *</span>
+                                    <input @bind="_state" />
+                                </label>
+                                <label class="form-field">
+                                    <span>Zip *</span>
+                                    <input @bind="_zip" />
+                                </label>
+                            </div>
                             <label class="form-field">
-                                <span>City *</span>
-                                <input @bind="_city" />
+                                <span>Service Contact *</span>
+                                <input @bind="_serviceContactName" />
                             </label>
                             <label class="form-field">
-                                <span>State *</span>
-                                <input @bind="_state" />
-                            </label>
-                            <label class="form-field">
-                                <span>Zip *</span>
-                                <input @bind="_zip" />
+                                <span>Service Phone *</span>
+                                <input @bind="_serviceContactPhone" />
                             </label>
                             <label class="form-field">
                                 <span>Gate Code(s)</span>
@@ -88,19 +98,11 @@ else
 
             <details class="field-expansion" open>
                 <summary class="field-expansion-summary">
-                    <span class="field-expansion-title">Contacts</span>
+                    <span class="field-expansion-title">Builder Information</span>
                 </summary>
                 <div class="field-expansion-body">
                     <article class="field-paper">
                         <div class="claim-form-grid">
-                            <label class="form-field">
-                                <span>Service Contact *</span>
-                                <input @bind="_serviceContactName" />
-                            </label>
-                            <label class="form-field">
-                                <span>Service Phone *</span>
-                                <input @bind="_serviceContactPhone" />
-                            </label>
                             <label class="form-field">
                                 <span>Builder Company *</span>
                                 <input list="quick-request-builders" value="@_builderCompanyName" @oninput="OnBuilderInputChanged" @onblur="HydrateFromBuilderAsync" />
@@ -242,7 +244,7 @@ else
             return Task.CompletedTask;
         }
 
-        _addressInput = match.Address;
+        _addressInput = StreetOnly(match);
         _city = match.City;
         _state = match.State;
         _zip = match.Zip;
@@ -346,6 +348,11 @@ else
             AddressKeyUtil.MakeAddressKey(customer.Street1) == key
             || AddressKeyUtil.MakeAddressKey(customer.Address) == key);
     }
+
+    private static string StreetOnly(CustomerSummary customer) =>
+        !string.IsNullOrWhiteSpace(customer.Street1)
+            ? customer.Street1
+            : customer.Address.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? customer.Address;
 
     public void Dispose()
     {

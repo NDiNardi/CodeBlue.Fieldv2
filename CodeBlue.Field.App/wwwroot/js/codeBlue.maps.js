@@ -679,6 +679,7 @@
     }
 
     const preserveView = !!(options && options.preserveView);
+    const forceDefaultView = !!(options && options.forceDefaultView);
     const viewport = preserveView ? preserveViewport(m) : null;
 
     clearScheduleMarkers();
@@ -772,7 +773,9 @@
       pts.push([lat, lng]);
     }
 
-    if (preserveView && viewport) {
+    if (forceDefaultView) {
+      try { m.setView([state.schedule.defaultLat, state.schedule.defaultLng], state.schedule.defaultZoom, { animate: false }); } catch {}
+    } else if (preserveView && viewport) {
       restoreViewport(m, viewport);
     } else {
       safeFitBounds(m, pts);

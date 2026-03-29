@@ -307,9 +307,6 @@ else
 }
 
 @code {
-    private const double DefaultCenterLat = 36.120637;
-    private const double DefaultCenterLng = -115.108577;
-    private const double DefaultCenterZoom = 9.25;
     private static readonly IReadOnlyList<int> RouteGroups = [1, 2, 3, 4, 5];
     private static readonly TimeSpan AutoRefreshThreshold = TimeSpan.FromMinutes(30);
 
@@ -449,7 +446,7 @@ else
         }
 
         _lastMapRenderKey = mapKey;
-        await JS.InvokeVoidAsync("cbScheduleMap.renderPins", pins, DefaultCenterLat, DefaultCenterLng, new { preserveView = true, defaultZoom = DefaultCenterZoom });
+        await JS.InvokeVoidAsync("cbScheduleMap.renderPins", pins, FieldMapDefaults.DefaultCenterLat, FieldMapDefaults.DefaultCenterLng, new { preserveView = true, defaultZoom = FieldMapDefaults.DefaultCenterZoom });
         await JS.InvokeVoidAsync("cbScheduleMap.invalidate");
     }
 
