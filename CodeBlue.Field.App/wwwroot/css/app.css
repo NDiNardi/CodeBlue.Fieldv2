@@ -3375,7 +3375,6 @@ h1:focus {
 }
 
 .bottom-sheet {
-    top: max(0.75rem, env(safe-area-inset-top));
     display: block;
     max-height: none;
     overflow: visible;
@@ -3499,7 +3498,6 @@ h1:focus {
 
 @media (max-width: 760px) {
     .bottom-sheet {
-        top: max(0.35rem, env(safe-area-inset-top));
         max-height: none;
     }
 }
