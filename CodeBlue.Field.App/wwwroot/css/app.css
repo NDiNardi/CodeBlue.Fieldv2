@@ -3376,11 +3376,9 @@ h1:focus {
 
 .bottom-sheet {
     top: max(0.75rem, env(safe-area-inset-top));
-    display: flex;
-    flex-direction: column;
-    max-height: calc(100dvh - 4.1rem - max(env(safe-area-inset-top), 0px));
-    overflow: hidden;
-    overscroll-behavior: contain;
+    display: block;
+    max-height: none;
+    overflow: visible;
 }
 
 .bottom-sheet .bottom-sheet-header {
@@ -3434,11 +3432,7 @@ h1:focus {
 }
 
 .bottom-sheet .sheet-nav {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch;
+    overflow: visible;
     padding: 0 0.9rem calc(0.95rem + env(safe-area-inset-bottom));
 }
 
@@ -3483,29 +3477,29 @@ h1:focus {
     padding-bottom: 5px !important;
     padding-left: 5px !important;
     padding-right: 5px !important;
-    gap: 0.58rem !important;
+    gap: 0.45rem !important;
     font-size: 0.86rem;
     line-height: 1;
 }
 
 .bottom-sheet .sheet-nav > .sheet-nav-link-page .sheet-nav-icon,
 .bottom-sheet .sheet-nav > .sheet-nav-link-button .sheet-nav-icon {
-    width: 1.5rem !important;
-    height: 1.5rem !important;
-    font-size: 1.05rem !important;
+    width: 1.3rem !important;
+    height: 1.3rem !important;
+    font-size: 0.96rem !important;
 }
 
 .bottom-sheet .sheet-nav > .sheet-nav-link-page strong,
 .bottom-sheet .sheet-nav > .sheet-nav-link-button strong {
     display: inline-flex;
     align-items: center;
-    min-height: 1.5rem;
+    min-height: 1.3rem;
     line-height: 1;
 }
 
 @media (max-width: 760px) {
     .bottom-sheet {
         top: max(0.35rem, env(safe-area-inset-top));
-        max-height: calc(100dvh - 3.7rem - max(env(safe-area-inset-top), 0px));
+        max-height: none;
     }
 }
