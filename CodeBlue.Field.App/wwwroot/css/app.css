@@ -311,6 +311,10 @@ h1:focus {
     margin-bottom: 0.7rem;
 }
 
+.sync-card .queue-overview {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .account-grid,
 .two-column-info {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -525,11 +529,16 @@ h1:focus {
 
 .customer-card-header {
     display: block;
+    color: var(--cb-accent-deep);
 }
 
 .customer-card-actions {
     flex: 0 0 auto;
     align-self: flex-start;
+}
+
+.customer-card-actions a {
+    color: var(--cb-accent-deep);
 }
 
 .pill {
@@ -3311,6 +3320,10 @@ h1:focus {
     .two-column-info,
     .claim-detail-three-column {
         grid-template-columns: 1fr;
+    }
+
+    .sync-card .queue-overview {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 
     .page-hero,

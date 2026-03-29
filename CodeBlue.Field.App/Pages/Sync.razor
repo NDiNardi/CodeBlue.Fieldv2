@@ -68,18 +68,22 @@ else
             </div>
         }
 
+        <div>
+            <p class="eyebrow">Queued Changes</p>
+        </div>
+
         <div class="queue-overview">
             <article class="queue-card">
-                <span class="summary-label">Queued Claims</span>
-                <strong>@_outboundSyncState.ClaimsToCreate.Count</strong>
+                <span class="summary-label">Claims</span>
+                <strong>@QueuedClaimCount</strong>
             </article>
             <article class="queue-card">
-                <span class="summary-label">Queued Service Requests</span>
-                <strong>@_outboundSyncState.WorkOrdersToComplete.Count</strong>
+                <span class="summary-label">Service Requests</span>
+                <strong>@QueuedServiceRequestCount</strong>
             </article>
             <article class="queue-card">
-                <span class="summary-label">Total Pending</span>
-                <strong>@_pendingChanges.Count</strong>
+                <span class="summary-label">Customers</span>
+                <strong>@QueuedCustomerCount</strong>
             </article>
         </div>
 
@@ -139,6 +143,9 @@ else
     private SyncResult? _lastSyncResult;
     private bool _isSyncing;
     private string? _statusWarning;
+    private int QueuedClaimCount => _pendingChanges?.Count(change => change.EntityType.Equals("Claim", StringComparison.OrdinalIgnoreCase)) ?? 0;
+    private int QueuedServiceRequestCount => _pendingChanges?.Count(change => change.EntityType.Equals("Service Request", StringComparison.OrdinalIgnoreCase)) ?? 0;
+    private int QueuedCustomerCount => _pendingChanges?.Count(change => change.EntityType.Equals("Customer", StringComparison.OrdinalIgnoreCase)) ?? 0;
 
     protected override async Task OnInitializedAsync()
     {
