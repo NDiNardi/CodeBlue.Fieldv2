@@ -353,7 +353,7 @@ h1:focus {
 .stack-copy,
 .sheet-nav {
     display: grid;
-    gap: 0.55rem;
+    gap: 0.35rem;
 }
 
 .data-card {
@@ -1509,7 +1509,7 @@ h1:focus {
     grid-template-columns: 1.5rem 1fr auto;
     align-items: center;
     gap: 0.58rem;
-    padding: 0.58rem 0.82rem;
+    padding: 5px;
     text-align: left;
     color: var(--cb-ink);
     border: 0;
@@ -3479,27 +3479,27 @@ h1:focus {
 .bottom-sheet .sheet-nav > .sheet-nav-link-page,
 .bottom-sheet .sheet-nav > .sheet-nav-link-button {
     min-height: 0 !important;
-    padding-top: 0.08rem !important;
-    padding-bottom: 0.08rem !important;
-    padding-left: 0.72rem !important;
-    padding-right: 0.72rem !important;
-    gap: 0.45rem !important;
+    padding-top: 5px !important;
+    padding-bottom: 5px !important;
+    padding-left: 5px !important;
+    padding-right: 5px !important;
+    gap: 0.58rem !important;
     font-size: 0.86rem;
     line-height: 1;
 }
 
 .bottom-sheet .sheet-nav > .sheet-nav-link-page .sheet-nav-icon,
 .bottom-sheet .sheet-nav > .sheet-nav-link-button .sheet-nav-icon {
-    width: 1.3rem !important;
-    height: 1.3rem !important;
-    font-size: 0.96rem !important;
+    width: 1.5rem !important;
+    height: 1.5rem !important;
+    font-size: 1.05rem !important;
 }
 
 .bottom-sheet .sheet-nav > .sheet-nav-link-page strong,
 .bottom-sheet .sheet-nav > .sheet-nav-link-button strong {
     display: inline-flex;
     align-items: center;
-    min-height: 1.3rem;
+    min-height: 1.5rem;
     line-height: 1;
 }
 
