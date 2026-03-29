@@ -33,7 +33,11 @@
                         <span class="sheet-install-mini-label">@(_showIosInstallHint ? "How To" : "Install")</span>
                     </button>
                 }
-                <button class="sheet-close sheet-close-x" type="button" @onclick="CloseMenu" aria-label="Close navigation">X</button>
+                <button class="sheet-close sheet-close-x" type="button" @onclick="CloseMenu" aria-label="Close navigation">
+                    <svg class="sheet-close-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M6 6l12 12M18 6 6 18"></path>
+                    </svg>
+                </button>
             </div>
         </div>
 
