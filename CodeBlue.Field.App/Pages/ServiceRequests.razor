@@ -32,7 +32,7 @@ else
             </label>
         </div>
 
-        <div class="data-list zebra-list">
+        <div class="data-list zebra-list service-request-list">
             @if (VisibleRequests.Count == 0)
             {
                 <article class="empty-card">
@@ -49,9 +49,40 @@ else
                             <div class="history-card-main">
                                 <div class="address-title">@StreetOnly(request)</div>
                                 <div class="card-subline card-subline-clamp">@ProblemText(request)</div>
+                                <div class="dashboard-stop-date dashboard-stop-date-right">@SubmittedLabel(request)</div>
                             </div>
                             <div class="card-meta-stack request-card-meta-stack">
-                                <span>@request.Status</span>
+                                @if (HasRequestActions(request))
+                                {
+                                    <span class="dashboard-stop-inline-action">
+                                        @if (HasMapTarget(request))
+                                        {
+                                            <a class="dashboard-stop-map-link"
+                                               href="@MapLink(request)"
+                                               target="_blank"
+                                               rel="noopener noreferrer"
+                                               @onclick:stopPropagation="true"
+                                               @onclick:preventDefault="false"
+                                               aria-label="Open map">
+                                                <svg class="dashboard-stop-map-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                                    <path d="M12 21s-5.5-5.27-5.5-10A5.5 5.5 0 1 1 17.5 11C17.5 15.73 12 21 12 21zm0-7.2A2.8 2.8 0 1 0 12 8.2a2.8 2.8 0 0 0 0 5.6z"></path>
+                                                </svg>
+                                            </a>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(request.ServiceContactPhone))
+                                        {
+                                            <a class="dashboard-stop-phone-link"
+                                               href="@TelLink(request.ServiceContactPhone)"
+                                               @onclick:stopPropagation="true"
+                                               @onclick:preventDefault="false"
+                                               aria-label="Call customer">
+                                                <svg class="dashboard-stop-phone-icon" viewBox="0 0 24 24" aria-hidden="true">
+                                                    <path d="M6.62 10.79a15.05 15.05 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1-.24c1.12.37 2.33.56 3.59.56a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1C10.3 21 3 13.7 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.26.19 2.47.56 3.59a1 1 0 0 1-.25 1z"></path>
+                                                </svg>
+                                            </a>
+                                        }
+                                    </span>
+                                }
                                 @if (request.RouteGroup is int routeGroup)
                                 {
                                     <span>Group @routeGroup</span>
@@ -120,6 +151,42 @@ else
 
     private static string ProblemText(WorkOrderSummary request) =>
         string.IsNullOrWhiteSpace(request.ServiceDetails) ? "No problem details recorded." : request.ServiceDetails;
+
+    private static string SubmittedLabel(WorkOrderSummary request) =>
+        $"Submitted {request.DateSubmitted:M/d/yy}";
+
+    private static bool HasMapTarget(WorkOrderSummary request) =>
+        request.Latitude is not null && request.Longitude is not null
+        || !string.IsNullOrWhiteSpace(request.Address)
+        || !string.IsNullOrWhiteSpace(request.Street1);
+
+    private static bool HasRequestActions(WorkOrderSummary request) =>
+        HasMapTarget(request) || !string.IsNullOrWhiteSpace(request.ServiceContactPhone);
+
+    private static string MapLink(WorkOrderSummary request)
+    {
+        if (request.Latitude is not null && request.Longitude is not null)
+        {
+            return $"https://www.google.com/maps/search/?api=1&query={request.Latitude.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)},{request.Longitude.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+        }
+
+        var query = string.IsNullOrWhiteSpace(request.Address)
+            ? string.Join(", ", new[] { request.Street1, request.City }.Where(value => !string.IsNullOrWhiteSpace(value)))
+            : request.Address;
+
+        return $"https://www.google.com/maps/search/?api=1&query={Uri.EscapeDataString(query)}";
+    }
+
+    private static string TelLink(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return "#";
+        }
+
+        var digits = new string(raw.Where(char.IsDigit).ToArray());
+        return string.IsNullOrWhiteSpace(digits) ? "#" : $"tel:{digits}";
+    }
 
     private string ToggleClass(bool active) => active ? "claim-toggle active" : "claim-toggle";
 

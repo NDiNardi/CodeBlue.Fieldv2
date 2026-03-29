@@ -61,18 +61,11 @@
                     <strong>Dashboard</strong>
                 </NavLink>
             }
-            @if (CanAccessCustomers)
+            @if (CanAccessSchedule)
             {
-                <NavLink class="sheet-nav-link sheet-nav-link-page" href="customers" @onclick="CloseMenu">
-                    <span class="sheet-nav-icon">👥</span>
-                    <strong>Customers</strong>
-                </NavLink>
-            }
-            @if (CanAccessClaims)
-            {
-                <NavLink class="sheet-nav-link sheet-nav-link-page" href="claims" @onclick="CloseMenu">
-                    <span class="sheet-nav-icon">🧾</span>
-                    <strong>Claims</strong>
+                <NavLink class="sheet-nav-link sheet-nav-link-page" href="schedule" @onclick="CloseMenu">
+                    <span class="sheet-nav-icon">🗺</span>
+                    <strong>Route Planning</strong>
                 </NavLink>
             }
             @if (CanAccessServiceRequests)
@@ -82,11 +75,18 @@
                     <strong>Service Requests</strong>
                 </NavLink>
             }
-            @if (CanAccessSchedule)
+            @if (CanAccessClaims)
             {
-                <NavLink class="sheet-nav-link sheet-nav-link-page" href="schedule" @onclick="CloseMenu">
-                    <span class="sheet-nav-icon">🗺</span>
-                    <strong>Route Planning</strong>
+                <NavLink class="sheet-nav-link sheet-nav-link-page" href="claims" @onclick="CloseMenu">
+                    <span class="sheet-nav-icon">🧾</span>
+                    <strong>Claim History</strong>
+                </NavLink>
+            }
+            @if (CanAccessCustomers)
+            {
+                <NavLink class="sheet-nav-link sheet-nav-link-page" href="customers" @onclick="CloseMenu">
+                    <span class="sheet-nav-icon">👥</span>
+                    <strong>Customer List</strong>
                 </NavLink>
             }
             <NavLink class="sheet-nav-link sheet-nav-link-page" href="sync" @onclick="CloseMenu">

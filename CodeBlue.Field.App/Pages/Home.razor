@@ -167,6 +167,7 @@ else
                                         }
                                     </div>
                                     <div class="card-subline card-subline-clamp">@ProblemText(serviceRequest)</div>
+                                    <div class="dashboard-stop-date dashboard-stop-date-right">@SubmittedLabel(serviceRequest)</div>
                                 </div>
                             </div>
                         </div>
@@ -231,6 +232,7 @@ else
                                     }
                                 </div>
                                 <div class="card-subline card-subline-clamp">@ProblemText(serviceRequest)</div>
+                                <div class="dashboard-stop-date dashboard-stop-date-right">@SubmittedLabel(serviceRequest)</div>
                             </div>
                         </div>
                     </a>
@@ -685,6 +687,9 @@ else
 
     private static string ProblemText(WorkOrderSummary workOrder) =>
         string.IsNullOrWhiteSpace(workOrder.ServiceDetails) ? "No service details recorded." : workOrder.ServiceDetails;
+
+    private static string SubmittedLabel(WorkOrderSummary workOrder) =>
+        $"Submitted {workOrder.DateSubmitted:M/d/yy}";
 
     private static string TelLink(string? raw)
     {
