@@ -7,8 +7,19 @@
 
   function safe(fn, fallback) { try { return fn(); } catch { return fallback; } }
   function qs(sel, within) { return safe(() => (within || document).querySelector(sel), null); }
+  function qsa(sel, within) { return safe(() => Array.from((within || document).querySelectorAll(sel)), []); }
   function byId(id) { return safe(() => document.getElementById(id), null); }
   function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
+  function isRenderable(el) {
+    return safe(() => {
+      if (!el) return false;
+      const rect = el.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    }, false);
+  }
+  function firstRenderable(elements) {
+    return safe(() => elements.find(isRenderable) || elements[0] || null, null);
+  }
 
   function getScrollParent(el) {
     return safe(() => {
@@ -54,7 +65,11 @@ window.cbSchedule.detectMobile = function () {
 
       // Unscheduled tray is full-width and not inside the horizontal columns scroller.
       if (key === "unscheduled") {
-        const tray = byId("col-unscheduled");
+        const tray = firstRenderable([
+          byId("col-unscheduled"),
+          byId("col-unscheduled-mobile"),
+          ...qsa("[data-unscheduled-tray='true']")
+        ].filter(Boolean));
         if (!tray) return true;
         const scroller = getScrollParent(tray);
         if (scroller) scrollIntoScroller(scroller, tray, 8);
@@ -120,7 +135,7 @@ window.cbSchedule.detectMobile = function () {
       const key = String(dayKey || "");
       let col = byId(`col-${key}`);
       if (!col && key === "unscheduled") {
-        col = qs("[data-unscheduled-tray='true']");
+        col = firstRenderable(qsa("[data-unscheduled-tray='true']"));
       }
       if (!col) return false;
 

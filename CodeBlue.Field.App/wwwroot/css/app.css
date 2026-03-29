@@ -1479,7 +1479,7 @@ h1:focus {
     grid-template-columns: 1.5rem 1fr auto;
     align-items: center;
     gap: 0.7rem;
-    padding: 1rem 0.9rem;
+    padding: 0.78rem 0.9rem;
     text-align: left;
     color: var(--cb-ink);
     border: 0;
@@ -3340,18 +3340,21 @@ h1:focus {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.55rem;
+    align-items: stretch;
 }
 
 .sheet-nav-link-quick {
     grid-template-columns: 1.25rem 1fr;
     gap: 0.55rem;
-    min-height: 3.35rem;
-    padding: 0.8rem 0.75rem;
+    min-height: 3rem;
+    padding: 0.68rem 0.7rem;
+    border-top: 0;
 }
 
 .sheet-nav-link-page {
-    padding-top: calc(1rem - 2.5px);
-    padding-bottom: calc(1rem - 2.5px);
+    min-height: 2.85rem;
+    padding-top: 0.68rem;
+    padding-bottom: 0.68rem;
 }
 
 @media (max-width: 760px) {

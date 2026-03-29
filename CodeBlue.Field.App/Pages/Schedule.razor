@@ -24,37 +24,23 @@ else
         </section>
 
         <div class="sch-layout">
-            <section class="section-block sch-map-card">
-                <div class="sch-map-header">
-                    <div class="sch-radio-group" role="radiogroup" aria-label="Route planning mode">
-                        <label class="sch-radio-option">
-                            <input type="radio" name="route-mode" checked="@(_viewMode == "assign")" @onchange="(_) => SetAssignMode()" />
-                            <span>Assign</span>
-                        </label>
-                        <label class="sch-radio-option">
-                            <input type="radio" name="route-mode" checked="@(_viewMode == "route")" @onchange="(_) => SetRouteMode()" />
-                            <span>Route</span>
-                        </label>
+            <div class="sch-mobile-shell">
+                <section class="section-block sch-map-card">
+                    <div class="sch-map-header">
+                        <div class="sch-radio-group" role="radiogroup" aria-label="Route planning mode">
+                            <label class="sch-radio-option">
+                                <input type="radio" name="route-mode-mobile" checked="@(_viewMode == "assign")" @onchange="(_) => SetAssignMode()" />
+                                <span>Assign</span>
+                            </label>
+                            <label class="sch-radio-option">
+                                <input type="radio" name="route-mode-mobile" checked="@(_viewMode == "route")" @onchange="(_) => SetRouteMode()" />
+                                <span>Route</span>
+                            </label>
+                        </div>
+                        <span class="section-tag">Saved locally</span>
                     </div>
-                    <span class="section-tag">Saved locally</span>
-                </div>
 
-                <div class="sch-route-daystrip">
-                    @foreach (var group in RouteGroups)
-                    {
-                        <button class="@($"sch-daypill {GroupPillClass(group)} {(group == _selectedGroup ? "is-active" : string.Empty)}")" type="button" @onclick="() => SelectGroup(group)">
-                            Group @group
-                        </button>
-                    }
-                </div>
-
-                <div id="cbScheduleMap" class="sch-map"></div>
-            </section>
-
-            <section class="section-block sch-board-card">
-                @if (_viewMode == "assign")
-                {
-                    <div class="sch-mobile-daybar">
+                    <div class="sch-route-daystrip">
                         @foreach (var group in RouteGroups)
                         {
                             <button class="@($"sch-daypill {GroupPillClass(group)} {(group == _selectedGroup ? "is-active" : string.Empty)}")" type="button" @onclick="() => SelectGroup(group)">
@@ -63,66 +49,37 @@ else
                         }
                     </div>
 
-                    <div class="sch-mobile-minidrops">
-                        @foreach (var group in RouteGroups)
-                        {
-                            <div class="sch-mini-slot">
-                                <div class="sch-mini-dropzone @(IsArmed ? "sch-dropzone-armed" : string.Empty)"
-                                     @ondragover:preventDefault
-                                     @ondrop="() => OnDropToGroupAsync(group)"
-                                     @onclick="() => AssignArmedToGroupAsync(group)">
-                                    <span class="sch-mini-date">Group @group</span>
-                                    <strong class="sch-mini-count">@WorkForGroup(group).Count</strong>
-                                </div>
-                            </div>
-                        }
-                    </div>
+                    <div id="cbScheduleMapMobile" class="sch-map"></div>
+                </section>
 
-                    <div id="col-unscheduled" class="sch-mobile-tray" data-unscheduled-tray="true" @ondragover:preventDefault @ondrop="OnDropToUnassignedAsync">
-                        <div class="sch-tray-head">
-                            <strong class="sch-col-title">Unassigned</strong>
-                            <span class="muted-note">Drag into a group</span>
-                        </div>
-
-                        <div class="data-list sch-dropzone">
-                            @if (UnassignedRequests.Count == 0)
-                            {
-                                <p class="muted-note">No unassigned service requests</p>
-                            }
-                            else
-                            {
-                                @foreach (var request in UnassignedRequests)
-                                {
-                                    @RenderScheduleCard(request)
-                                }
-                            }
-                        </div>
-                    </div>
-
-                    <div class="sch-board-desktop">
-                        <div class="sch-columns">
+                <section class="section-block sch-board-card">
+                    @if (_viewMode == "assign")
+                    {
+                        <div class="sch-mobile-daybar">
                             @foreach (var group in RouteGroups)
                             {
-                                <div id="@($"col-group-{group}")" class="schedule-column sch-col @(group == _selectedGroup ? "sch-day-selected" : string.Empty)"
-                                     @ondragover:preventDefault
-                                     @ondrop="() => OnDropToGroupAsync(group)"
-                                     @onclick="() => AssignArmedToGroupAsync(group)">
-                                    <div class="sch-col-head">
-                                        <strong class="sch-col-title">Group @group</strong>
-                                        <span class="@($"sch-daypill {GroupPillClass(group)}")">@WorkForGroup(group).Count</span>
-                                    </div>
+                                <button class="@($"sch-daypill {GroupPillClass(group)} {(group == _selectedGroup ? "is-active" : string.Empty)}")" type="button" @onclick="() => SelectGroup(group)">
+                                    Group @group
+                                </button>
+                            }
+                        </div>
 
-                                    <div class="data-list">
-                                        @foreach (var request in WorkForGroup(group))
-                                        {
-                                            @RenderScheduleCard(request)
-                                        }
+                        <div class="sch-mobile-minidrops">
+                            @foreach (var group in RouteGroups)
+                            {
+                                <div class="sch-mini-slot">
+                                    <div class="sch-mini-dropzone @(IsArmed ? "sch-dropzone-armed" : string.Empty)"
+                                         @ondragover:preventDefault
+                                         @ondrop="() => OnDropToGroupAsync(group)"
+                                         @onclick="() => AssignArmedToGroupAsync(group)">
+                                        <span class="sch-mini-date">Group @group</span>
+                                        <strong class="sch-mini-count">@WorkForGroup(group).Count</strong>
                                     </div>
                                 </div>
                             }
                         </div>
 
-                        <div id="col-unscheduled" class="sch-mobile-tray" data-unscheduled-tray="true" @ondragover:preventDefault @ondrop="OnDropToUnassignedAsync">
+                        <div id="col-unscheduled-mobile" class="sch-mobile-tray" data-unscheduled-tray="true" @ondragover:preventDefault @ondrop="OnDropToUnassignedAsync">
                             <div class="sch-tray-head">
                                 <strong class="sch-col-title">Unassigned</strong>
                                 <span class="muted-note">Drag into a group</span>
@@ -142,35 +99,140 @@ else
                                 }
                             </div>
                         </div>
-                    </div>
-                }
-                else
-                {
-                    <div class="sch-route">
-                        <div class="sch-route-tray">
-                            <div class="sch-tray-head">
-                                <strong class="sch-col-title">Group @_selectedGroup Route</strong>
-                                <span class="section-tag">@SelectedGroupStops.Count</span>
-                                <span class="muted-note">Use arrows to reorder</span>
-                            </div>
+                    }
+                    else
+                    {
+                        <div class="sch-route">
+                            <div class="sch-route-tray">
+                                <div class="sch-tray-head">
+                                    <strong class="sch-col-title">Group @_selectedGroup Route</strong>
+                                    <span class="section-tag">@SelectedGroupStops.Count</span>
+                                    <span class="muted-note">Use arrows to reorder</span>
+                                </div>
 
-                            <div class="data-list">
-                                @if (SelectedGroupStops.Count == 0)
-                                {
-                                    <p class="muted-note">No route stops in this group.</p>
-                                }
-                                else
-                                {
-                                    @foreach (var request in SelectedGroupStops)
+                                <div class="data-list">
+                                    @if (SelectedGroupStops.Count == 0)
                                     {
-                                        @RenderRouteCard(request)
+                                        <p class="muted-note">No route stops in this group.</p>
                                     }
-                                }
+                                    else
+                                    {
+                                        @foreach (var request in SelectedGroupStops)
+                                        {
+                                            @RenderRouteCard(request)
+                                        }
+                                    }
+                                </div>
                             </div>
                         </div>
+                    }
+                </section>
+            </div>
+
+            <div class="sch-desktop-split">
+                <section class="section-block sch-map-card">
+                    <div class="sch-map-header">
+                        <div class="sch-radio-group" role="radiogroup" aria-label="Route planning mode">
+                            <label class="sch-radio-option">
+                                <input type="radio" name="route-mode-desktop" checked="@(_viewMode == "assign")" @onchange="(_) => SetAssignMode()" />
+                                <span>Assign</span>
+                            </label>
+                            <label class="sch-radio-option">
+                                <input type="radio" name="route-mode-desktop" checked="@(_viewMode == "route")" @onchange="(_) => SetRouteMode()" />
+                                <span>Route</span>
+                            </label>
+                        </div>
+                        <span class="section-tag">Saved locally</span>
                     </div>
-                }
-            </section>
+
+                    <div class="sch-route-daystrip">
+                        @foreach (var group in RouteGroups)
+                        {
+                            <button class="@($"sch-daypill {GroupPillClass(group)} {(group == _selectedGroup ? "is-active" : string.Empty)}")" type="button" @onclick="() => SelectGroup(group)">
+                                Group @group
+                            </button>
+                        }
+                    </div>
+
+                    <div id="cbScheduleMapDesktop" class="sch-map"></div>
+                </section>
+
+                <section class="section-block sch-board-card">
+                    @if (_viewMode == "assign")
+                    {
+                        <div class="sch-board-desktop">
+                            <div class="sch-columns">
+                                @foreach (var group in RouteGroups)
+                                {
+                                    <div id="@($"col-group-{group}")" class="schedule-column sch-col @(group == _selectedGroup ? "sch-day-selected" : string.Empty)"
+                                         @ondragover:preventDefault
+                                         @ondrop="() => OnDropToGroupAsync(group)"
+                                         @onclick="() => AssignArmedToGroupAsync(group)">
+                                        <div class="sch-col-head">
+                                            <strong class="sch-col-title">Group @group</strong>
+                                            <span class="@($"sch-daypill {GroupPillClass(group)}")">@WorkForGroup(group).Count</span>
+                                        </div>
+
+                                        <div class="data-list">
+                                            @foreach (var request in WorkForGroup(group))
+                                            {
+                                                @RenderScheduleCard(request)
+                                            }
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+
+                            <div id="col-unscheduled" class="sch-mobile-tray" data-unscheduled-tray="true" @ondragover:preventDefault @ondrop="OnDropToUnassignedAsync">
+                                <div class="sch-tray-head">
+                                    <strong class="sch-col-title">Unassigned</strong>
+                                    <span class="muted-note">Drag into a group</span>
+                                </div>
+
+                                <div class="data-list sch-dropzone">
+                                    @if (UnassignedRequests.Count == 0)
+                                    {
+                                        <p class="muted-note">No unassigned service requests</p>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var request in UnassignedRequests)
+                                        {
+                                            @RenderScheduleCard(request)
+                                        }
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="sch-route">
+                            <div class="sch-route-tray">
+                                <div class="sch-tray-head">
+                                    <strong class="sch-col-title">Group @_selectedGroup Route</strong>
+                                    <span class="section-tag">@SelectedGroupStops.Count</span>
+                                    <span class="muted-note">Use arrows to reorder</span>
+                                </div>
+
+                                <div class="data-list">
+                                    @if (SelectedGroupStops.Count == 0)
+                                    {
+                                        <p class="muted-note">No route stops in this group.</p>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var request in SelectedGroupStops)
+                                        {
+                                            @RenderRouteCard(request)
+                                        }
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </section>
+            </div>
         </div>
     </section>
 }
