@@ -22,8 +22,8 @@ else
 {
     <section class="section-block">
         <div class="claim-toggle-row">
-            <button class="@ToggleClass(_showLiveClaims)" type="button" @onclick="() => _showLiveClaims = true">New</button>
             <button class="@ToggleClass(!_showLiveClaims)" type="button" @onclick="() => _showLiveClaims = false">History</button>
+            <button class="@ToggleClass(_showLiveClaims)" type="button" @onclick="() => _showLiveClaims = true">New</button>
         </div>
         <div class="toolbar-row">
             <label class="search-box search-box-full">
@@ -66,7 +66,7 @@ else
 @code {
     private IReadOnlyList<ClaimSummary>? _claims;
     private string _search = string.Empty;
-    private bool _showLiveClaims = true;
+    private bool _showLiveClaims;
 
     private IReadOnlyList<ClaimSummary> VisibleClaims =>
         (_claims ?? [])

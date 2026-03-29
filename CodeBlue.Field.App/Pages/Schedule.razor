@@ -37,16 +37,6 @@ else
                                 <span>Route</span>
                             </label>
                         </div>
-                        <span class="section-tag">Saved locally</span>
-                    </div>
-
-                    <div class="sch-route-daystrip">
-                        @foreach (var group in RouteGroups)
-                        {
-                            <button class="@($"sch-daypill {GroupPillClass(group)} {(group == _selectedGroup ? "is-active" : string.Empty)}")" type="button" @onclick="() => SelectGroup(group)">
-                                Group @group
-                            </button>
-                        }
                     </div>
 
                     <div id="cbScheduleMapMobile" class="sch-map"></div>
@@ -104,6 +94,15 @@ else
                     {
                         <div class="sch-route">
                             <div class="sch-route-tray">
+                                <div class="sch-mobile-daybar">
+                                    @foreach (var group in RouteGroups)
+                                    {
+                                        <button class="@($"sch-daypill {GroupPillClass(group)} {(group == _selectedGroup ? "is-active" : string.Empty)}")" type="button" @onclick="() => SelectGroup(group)">
+                                            Group @group
+                                        </button>
+                                    }
+                                </div>
+
                                 <div class="sch-tray-head">
                                     <strong class="sch-col-title">Group @_selectedGroup Route</strong>
                                     <span class="section-tag">@SelectedGroupStops.Count</span>
@@ -142,16 +141,6 @@ else
                                 <span>Route</span>
                             </label>
                         </div>
-                        <span class="section-tag">Saved locally</span>
-                    </div>
-
-                    <div class="sch-route-daystrip">
-                        @foreach (var group in RouteGroups)
-                        {
-                            <button class="@($"sch-daypill {GroupPillClass(group)} {(group == _selectedGroup ? "is-active" : string.Empty)}")" type="button" @onclick="() => SelectGroup(group)">
-                                Group @group
-                            </button>
-                        }
                     </div>
 
                     <div id="cbScheduleMapDesktop" class="sch-map"></div>
@@ -209,6 +198,15 @@ else
                     {
                         <div class="sch-route">
                             <div class="sch-route-tray">
+                                <div class="sch-mobile-daybar">
+                                    @foreach (var group in RouteGroups)
+                                    {
+                                        <button class="@($"sch-daypill {GroupPillClass(group)} {(group == _selectedGroup ? "is-active" : string.Empty)}")" type="button" @onclick="() => SelectGroup(group)">
+                                            Group @group
+                                        </button>
+                                    }
+                                </div>
+
                                 <div class="sch-tray-head">
                                     <strong class="sch-col-title">Group @_selectedGroup Route</strong>
                                     <span class="section-tag">@SelectedGroupStops.Count</span>
@@ -383,6 +381,8 @@ else
 
     private async Task MoveRouteStopAsync(Guid id, int direction)
     {
+        _preserveMapViewOnce = false;
+        _resetMapToDefaultOnce = true;
         await FieldData.ReorderRouteGroupAsync(id, direction);
         await LoadWorkOrdersAsync();
         _armedWorkOrderId = id;
@@ -470,6 +470,13 @@ else
         _preserveMapViewOnce = true;
         await FieldData.UpdateWorkOrderRouteGroupAsync(requestId, null);
         await LoadWorkOrdersAsync();
+        _armedWorkOrderId = requestId;
+        _dragWorkOrderId = null;
+
+        await InvokeAsync(StateHasChanged);
+        await JS.InvokeVoidAsync("ScheduleBoard.scrollToColumn", "unscheduled");
+        await JS.InvokeVoidAsync("ScheduleBoard.scrollToWorkOrderInColumn", "unscheduled", requestId.ToString(), new { align = "top" });
+        await JS.InvokeVoidAsync("ScheduleBoard.pulseWorkOrder", requestId.ToString());
     }
 
     [JSInvokable]

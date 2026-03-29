@@ -543,13 +543,11 @@
 
   function buildPopupHtml(pin, isUnscheduled) {
     const titleText = pin.label ?? pin.Label ?? "";
-    const addrText = pin.address ?? pin.Address ?? "";
     const svcText = pin.serviceDescription ?? pin.ServiceDescription ?? "";
     const dayKey = String(pin.dayKey ?? pin.DayKey ?? "").toLowerCase();
     const shouldShowUnassign = dayKey !== "unscheduled" && isUnscheduled !== true;
 
     const title = titleText ? `<div style="font-weight:900;margin-bottom:4px;">${escapeHtml(titleText)}</div>` : "";
-    const addr = addrText ? `<div style="margin-bottom:6px;">${escapeHtml(addrText)}</div>` : "";
     const svc = svcText ? `<div style="margin-bottom:10px;opacity:0.92;">${escapeHtml(svcText)}</div>` : "";
 
     const btn = shouldShowUnassign
@@ -560,7 +558,7 @@
          </button>`
       : "";
 
-    return `${title}${addr}${svc}${btn}`;
+    return `${title}${svc}${btn}`;
   }
 
   function ensureScheduleMap(elementId, defaultLat, defaultLng) {

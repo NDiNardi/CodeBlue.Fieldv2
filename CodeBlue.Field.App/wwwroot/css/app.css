@@ -742,6 +742,10 @@ h1:focus {
     width: 100%;
 }
 
+.service-request-list {
+    gap: 5px;
+}
+
 .request-card-meta-stack {
     align-self: start;
     justify-self: end;
@@ -786,6 +790,23 @@ h1:focus {
 
 .search-box {
     min-width: min(24rem, 100%);
+    position: relative;
+}
+
+.search-box::before {
+    content: "";
+    position: absolute;
+    left: 0.85rem;
+    top: 50%;
+    width: 1rem;
+    height: 1rem;
+    transform: translateY(-50%);
+    pointer-events: none;
+    opacity: 0.68;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 1rem 1rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23536b84' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E");
 }
 
 .search-box-full {
@@ -805,6 +826,10 @@ h1:focus {
     background: #fff;
     color: var(--cb-ink);
     font: inherit;
+}
+
+.search-box input {
+    padding-left: 2.5rem;
 }
 
 .search-box input:focus,
@@ -1071,6 +1096,12 @@ h1:focus {
     font-size: 0.78rem;
     font-weight: 700;
     white-space: nowrap;
+}
+
+.dashboard-stop-date-right {
+    align-self: flex-end;
+    text-align: right;
+    margin-top: 0.2rem;
 }
 
 .detail-grid,
